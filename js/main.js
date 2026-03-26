@@ -1,83 +1,83 @@
-// fil: js/main.js
 import { state } from './state.js';
 import { setupAuth, createLogoutButton } from './auth.js';
 import { loadTrainsFromDatabase, loadWorksFromDatabase } from './api.js';
 import { setupUI } from './ui.js';
 
-// 1. När sidan laddas, starta inloggningskontrollen direkt
 document.addEventListener('DOMContentLoaded', () => {
-    setupAuth();
+    // Vi skickar in funktionen initApp som en "callback"
+    setupAuth(initApp);
 });
 
-// 2. Denna funktion anropas inifrån auth.js så fort inloggningen har lyckats
 export async function initApp() {
     createLogoutButton();
     
-    // Hämta just DINA grafer från databasen
+    // Hämta grafer från databasen
     try {
         const res = await fetch('/api/graphs', { 
             headers: { 'Authorization': `Bearer ${state.token}` } 
         });
-        
         if (res.ok) {
-            const dbGraphs = await res.json();
-            if (dbGraphs.length > 0) {
-                state.savedGraphs = dbGraphs;
-                // Vi sparar en kopia lokalt ifall admin.js behöver läsa dem
-                localStorage.setItem('mto_graphs', JSON.stringify(state.savedGraphs));
-            }
+            state.savedGraphs = await res.json();
+            localStorage.setItem('mto_graphs', JSON.stringify(state.savedGraphs));
+        } else {
+            state.savedGraphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
         }
     } catch (e) { 
-        console.error("Kunde inte hämta grafer från molnet", e); 
+        console.error("Kunde inte hämta grafer", e); 
+        state.savedGraphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
     }
 
-    // Fyll rullgardinsmenyn i toppen med dina grafer
+    // Setup väljare för graf
     const sel = document.getElementById('activeGraphSelect');
     if (sel && state.savedGraphs.length > 0) {
         sel.innerHTML = '';
-        state.savedGraphs.forEach(g => {
-            sel.appendChild(new Option(g.name || 'Namnlös graf', g.id));
+        state.savedGraphs.forEach(g => sel.appendChild(new Option(g.name, g.id)));
+        
+        // När användaren byter graf i rullgardinslistan
+        sel.addEventListener('change', async (e) => {
+            await loadGraphData(e.target.value);
         });
         
-        // Lyssna på om användaren byter graf
-        sel.addEventListener('change', (e) => loadGraphData(e.target.value));
-        
-        // Ladda in den allra första grafen automatiskt
+        // Ladda den första grafen vid start
         await loadGraphData(state.savedGraphs[0].id);
-    } else if (sel) {
-        sel.innerHTML = '<option>Inga grafer hittades för din användare</option>';
     }
 
-    // Starta Canvas, ritslingan och alla mus-events!
+    // Starta canvas-klick och rit-loopen
     setupUI();
-    
-    console.log("SKUTT har startat framgångsrikt i modulläge!");
 }
 
-// 3. Funktion för att ladda data när en specifik graf väljs
-export async function loadGraphData(graphId) {
+async function loadGraphData(graphId) {
     state.activeGraphId = graphId;
     const graph = state.savedGraphs.find(g => g.id === graphId);
     
-    // Sortera driftplatserna efter km-tal
-    state.stations = graph && graph.stations ? graph.stations.sort((a, b) => a.km - b.km) : [];
+    // Hämta och sortera stationerna säkert
+    if (graph && graph.stations) {
+        state.stations = [...graph.stations].sort((a, b) => a.km - b.km);
+    } else {
+        state.stations = [];
+    }
     
-    // Nollställ eventuella val som användaren hade i den förra grafen
-    state.expandedWorkId = null;
-    state.editingWorkId = null;
+    // 🚨 MYCKET VIKTIGT: Nollställ alla gamla val från förra grafen!
+    // Annars kraschar renderingsloopen (och menyn) när den försöker 
+    // visa ett tåg eller arbete som fanns i förra grafen men inte i den nya.
     state.selectedTrainIndex = null;
     state.activeNode = null;
+    state.expandedWorkId = null;
+    state.editingWorkId = null;
     state.draggingConflict = null;
-    state.activeTooltipNode = null;
-    state.tooltipHitboxes = null;
+    state.draggingNode = null;
 
-    // Hämta in tågen och banarbetena från servern för just denna graf
+    // Töm grafens data temporärt medan vi hämtar nytt (rensar canvasen)
+    state.trains = [];
+    state.trackWorks = [];
+    state.conflicts = [];
+    state.conflictSegments = new Set();
+    
+    // Ladda in de nya tågen och banarbetena från servern
     await loadTrainsFromDatabase();
     await loadWorksFromDatabase();
     
-    // Om du har en renderSidebar()-funktion inlagd i ui.js senare kan du anropa den här:
-    // renderSidebar(); 
-    
-    // Tvinga canvasen att rita om sig med den nya datan
+    // Säg åt canvasen och sidomenyn att rita upp allt på nytt för den nya grafen!
     state.needsRedraw = true;
+    state.needsSidebarUpdate = true;
 }
