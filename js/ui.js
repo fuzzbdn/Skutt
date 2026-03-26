@@ -175,44 +175,32 @@ function getBoundVal(sIdx, sInc, isLeft) {
 async function saveMtoWork(status) {
     const workType = document.getElementById('workType').value;
     const rawLabel = document.getElementById('workLabel').value;
-    const trainRef = document.getElementById('workTrainReference').value;
     
     let startTime = getFormMinutes('workStartTime'); 
     let endTime = getFormMinutes('workEndTime');
-    
     if(isNaN(startTime)) startTime = state.currentRealMinutes;
     if(isNaN(endTime)) endTime = state.currentRealMinutes + 60;
 
-    const existingWork = state.editingWorkId ? state.trackWorks.find(w => w.id === state.editingWorkId) : null;
-    if (status === 'Startad' && (!existingWork || existingWork.status !== 'Startad')) startTime = state.currentRealMinutes;
-    if (status === 'Avslutad' && (!existingWork || existingWork.status !== 'Avslutad')) endTime = state.currentRealMinutes;
-    
-    let displayLabel = rawLabel ? `${workType}: ${rawLabel}` : workType;
-    if (workType === 'Efter tåg' && trainRef) displayLabel = `Efter tåg ${trainRef}: ${rawLabel}`;
-
+    // Bygg objektet med namnen som databasen förväntar sig (snake_case)
     const newWork = {
         id: state.editingWorkId || Date.now().toString(), 
         graph_id: state.activeGraphId,
-        label: displayLabel, 
-        type: workType, 
-        rawLabel: rawLabel, 
-        trainReference: trainRef,
+        type: workType,
+        label: rawLabel || workType, 
         status: status,
-        startStation: parseInt(document.getElementById('workStartStation').value), 
-        endStation: parseInt(document.getElementById('workEndStation').value),
-        incStart: document.getElementById('incStart').value === 'true',
-        incEnd: document.getElementById('incEnd').value === 'true',
-        startTime: startTime, 
-        endTime: endTime, 
+        start_time: startTime, 
+        end_time: endTime, 
+        start_station: parseInt(document.getElementById('workStartStation').value), 
+        end_station: parseInt(document.getElementById('workEndStation').value),
         track: document.getElementById('workTrack').value,
-        endPlace: document.getElementById('workEndPlace').value,
+        end_place: document.getElementById('workEndPlace').value,
         bounds: document.getElementById('workBounds').value, 
-        blockedArea: document.getElementById('workBlockedArea').value,
+        blocked_area: document.getElementById('workBlockedArea').value,
         switches: document.getElementById('workSwitches').value,
         consultation: document.getElementById('workConsultation').value,
-        contactName: document.getElementById('workContactName').value, 
-        contactPhone: document.getElementById('workContactPhone').value, 
-        detailsText: document.getElementById('workDetails').value
+        contact_name: document.getElementById('workContactName').value, 
+        contact_phone: document.getElementById('workContactPhone').value, 
+        details_text: document.getElementById('workDetails').value
     };
     
     try {
@@ -230,7 +218,6 @@ async function saveMtoWork(status) {
         state.needsRedraw = true;
     } catch (error) {
         console.error("Kunde inte spara:", error);
-        alert("Något gick snett när datan skulle sparas till molnet.");
     }
 }
 
