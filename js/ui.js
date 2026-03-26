@@ -175,36 +175,49 @@ function getBoundVal(sIdx, sInc, isLeft) {
 async function saveMtoWork(status) {
     const workType = document.getElementById('workType').value;
     const rawLabel = document.getElementById('workLabel').value;
+    const trainRef = document.getElementById('workTrainReference')?.value || '';
     
     let startTime = getFormMinutes('workStartTime'); 
     let endTime = getFormMinutes('workEndTime');
     if(isNaN(startTime)) startTime = state.currentRealMinutes;
     if(isNaN(endTime)) endTime = state.currentRealMinutes + 60;
 
-    // Bygg objektet med namnen som databasen förväntar sig (snake_case)
+    const existingWork = state.editingWorkId ? state.trackWorks.find(w => w.id === state.editingWorkId) : null;
+    if (status === 'Startad' && (!existingWork || existingWork.status !== 'Startad')) startTime = state.currentRealMinutes;
+    if (status === 'Avslutad' && (!existingWork || existingWork.status !== 'Avslutad')) endTime = state.currentRealMinutes;
+
+    let displayLabel = rawLabel || workType;
+    if (workType === 'Efter tåg' && trainRef) displayLabel = `Efter tåg ${trainRef}: ${rawLabel}`;
+
+    const incStartVal = document.getElementById('incStart').value === 'true';
+    const incEndVal = document.getElementById('incEnd').value === 'true';
+
+    // Samla all data i exakt de format databasen förväntar sig (snake_case)
     const newWork = {
         id: state.editingWorkId || Date.now().toString(), 
         graph_id: state.activeGraphId,
         type: workType,
-        label: rawLabel || workType, 
+        label: displayLabel, 
         status: status,
-        start_time: startTime, 
-        end_time: endTime, 
+        start_time: Math.round(startTime), 
+        end_time: Math.round(endTime), 
         start_station: parseInt(document.getElementById('workStartStation').value), 
         end_station: parseInt(document.getElementById('workEndStation').value),
-        track: document.getElementById('workTrack').value,
-        end_place: document.getElementById('workEndPlace').value,
-        bounds: document.getElementById('workBounds').value, 
-        blocked_area: document.getElementById('workBlockedArea').value,
-        switches: document.getElementById('workSwitches').value,
-        consultation: document.getElementById('workConsultation').value,
-        contact_name: document.getElementById('workContactName').value, 
-        contact_phone: document.getElementById('workContactPhone').value, 
-        details_text: document.getElementById('workDetails').value
+        inc_start: incStartVal,
+        inc_end: incEndVal,
+        track: document.getElementById('workTrack').value || '',
+        end_place: document.getElementById('workEndPlace').value || '',
+        bounds: document.getElementById('workBounds').value || '', 
+        blocked_area: document.getElementById('workBlockedArea').value || '',
+        switches: document.getElementById('workSwitches').value || '',
+        consultation: document.getElementById('workConsultation').value || '',
+        contact_name: document.getElementById('workContactName').value || '', 
+        contact_phone: document.getElementById('workContactPhone').value || '', 
+        details_text: document.getElementById('workDetails').value || ''
     };
     
     try {
-        await fetch('/api/works', {
+        const response = await fetch('/api/works', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -213,11 +226,17 @@ async function saveMtoWork(status) {
             body: JSON.stringify(newWork)
         });
         
-        await loadWorksFromDatabase();
-        document.getElementById('workModal').style.display = 'none'; 
-        state.needsRedraw = true;
+        if (response.ok) {
+            await loadWorksFromDatabase();
+            document.getElementById('workModal').style.display = 'none'; 
+            state.needsRedraw = true;
+        } else {
+            const errData = await response.json();
+            alert("Fel vid sparande: " + errData.error);
+        }
     } catch (error) {
         console.error("Kunde inte spara:", error);
+        alert("Nätverksfel vid sparande.");
     }
 }
 
