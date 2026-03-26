@@ -142,11 +142,25 @@ window.deleteStation = function(index) {
     }
 };
 
-// --- Spara till webbläsaren ---
-function saveData() {
+// --- Spara till webbläsaren OCH databasen ---
+async function saveData() {
+    // 1. Spara lokalt som vanligt för att sidan ska ladda snabbt
     localStorage.setItem('mto_graphs', JSON.stringify(graphs));
-}
+    
+    // 2. Skicka grafen till vår Neon-databas!
+    const activeGraph = graphs.find(g => g.id === activeGraphId);
+    if (!activeGraph) return;
 
+    try {
+        await fetch('/api/graphs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(activeGraph)
+        });
+    } catch (error) {
+        console.error("Kunde inte spara grafen till databasen", error);
+    }
+}
 
 // ==========================================
 // --- XML Export & Import (Alla grafer) ---
