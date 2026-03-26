@@ -128,13 +128,18 @@ export function drawGraph() {
         ctx.setLineDash([]); ctx.fillStyle = theme.timeLabel; ctx.fillText(formatTime(time), margin.left - 10, y + 4);
     }
 
-    // Banarbeten (NU ÅTERSTÄLLDA TILL ORIGINALUTSEENDET!)
+// Banarbeten
     const viewEnd = state.currentStartTime + state.viewDuration;
     state.trackWorks.forEach(work => {
+        // NY RAD: Dölj avslutade arbeten i grafen!
+        if (work.status === 'Avslutad') return;
+
         // Säkerhetsspärr om datan är ofullständig
         if (work.startStation === undefined || work.endStation === undefined) return;
         if (isNaN(work.startTime) || isNaN(work.endTime)) return;
         if (work.endTime < state.currentStartTime || work.startTime > viewEnd) return;
+        
+        // ... (resten av koden är samma) ...
 
         let minSt = Math.min(work.startStation, work.endStation);
         let maxSt = Math.max(work.startStation, work.endStation);
