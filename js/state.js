@@ -36,6 +36,7 @@ export const state = {
     
     // Rendering & Konflikter
     needsRedraw: true,
+    needsSidebarUpdate: true,
     conflicts: [],
     conflictSegments: new Set(),
     draggingConflict: null,
