@@ -1,41 +1,28 @@
-// fil: js/auth.js
 import { state } from './state.js';
-import { initApp } from './main.js';
 
-export function setupAuth() {
-    const authOverlay = document.getElementById('authOverlay');
+export function setupAuth(onSuccess) {
     const authUsername = document.getElementById('authUsername');
     const authPassword = document.getElementById('authPassword');
     const authMessage = document.getElementById('authMessage');
 
-    // Kolla om vi redan är inloggade
-    if (state.token) {
-        authOverlay.style.display = 'none';
-        initApp(); // Starta appen!
+    // 1. Redan inloggad? Skicka vidare direkt!
+    if (localStorage.getItem('skutt_token')) {
+        onSuccess();
         return;
     }
 
-    // Koppla knapparna
-    const loginBtn = document.getElementById('loginBtn');
-    const registerBtn = document.getElementById('registerBtn');
-
-    if (loginBtn && registerBtn) {
-        loginBtn.addEventListener('click', () => handleAuth('login'));
-        registerBtn.addEventListener('click', () => handleAuth('register'));
-    }
+    // 2. Koppla knappar
+    document.getElementById('loginBtn')?.addEventListener('click', () => handleAuth('login'));
+    document.getElementById('registerBtn')?.addEventListener('click', () => handleAuth('register'));
 
     async function handleAuth(action) {
         const username = authUsername.value.trim();
         const password = authPassword.value;
 
         if (!username || !password) {
-            authMessage.style.color = '#ff6b6b';
             authMessage.textContent = 'Fyll i båda fälten.';
             return;
         }
-
-        authMessage.style.color = '#888888';
-        authMessage.textContent = 'Laddar...';
 
         try {
             const res = await fetch(`/api/auth?action=${action}`, {
@@ -46,7 +33,6 @@ export function setupAuth() {
             const data = await res.json();
 
             if (!res.ok) {
-                authMessage.style.color = '#ff6b6b';
                 authMessage.textContent = data.error || 'Ett fel uppstod.';
                 return;
             }
@@ -54,37 +40,30 @@ export function setupAuth() {
             if (action === 'register') {
                 authMessage.style.color = '#33ccff';
                 authMessage.textContent = 'Konto skapat! Loggar in...';
-                // Logga in automatiskt efter registrering
                 handleAuth('login'); 
             } else if (action === 'login') {
                 localStorage.setItem('skutt_token', data.token);
                 localStorage.setItem('skutt_user', data.username);
-                state.token = data.token;
-                state.currentUser = data.username;
                 
-                authOverlay.style.display = 'none';
-                initApp();
+                // SKICKA VIDARE TILL GRAFEN!
+                onSuccess(); 
             }
         } catch (err) {
-            authMessage.style.color = '#ff6b6b';
             authMessage.textContent = 'Kunde inte ansluta till servern.';
         }
     }
 }
 
 export function createLogoutButton() {
+    if (document.getElementById('logoutBtn')) return;
     const logoutBtn = document.createElement('button');
-    logoutBtn.textContent = `Logga ut (${state.currentUser})`;
+    logoutBtn.id = 'logoutBtn';
+    logoutBtn.textContent = `Logga ut (${state.currentUser || localStorage.getItem('skutt_user')})`;
     logoutBtn.className = 'sidebar-btn';
-    logoutBtn.style.position = 'absolute';
-    logoutBtn.style.top = '10px';
-    logoutBtn.style.right = '10px';
-    logoutBtn.style.borderColor = '#ff4d4d';
-    logoutBtn.style.color = '#ff4d4d';
+    logoutBtn.style.cssText = 'position:absolute; top:10px; right:10px; z-index:9999; border-color:#ff4d4d; color:#ff4d4d;';
     logoutBtn.onclick = () => {
-        localStorage.removeItem('skutt_token');
-        localStorage.removeItem('skutt_user');
-        window.location.reload();
+        localStorage.clear(); // Töm alla tokens
+        window.location.href = 'index.html'; // Skicka tillbaka till inloggningen
     };
     document.body.appendChild(logoutBtn);
 }
