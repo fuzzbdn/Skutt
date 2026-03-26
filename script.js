@@ -129,60 +129,27 @@ async function loadTrainsFromDatabase() {
         let savedDbTrains = [];
         if (response.ok) savedDbTrains = await response.json();
         
-        let today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         trains = savedDbTrains.map(train => {
             let convertedTimetable = [];
-            let currentDayOffset = 0;
             
-            if (train.startDate) {
-                let sDate = new Date(train.startDate);
-                sDate.setHours(0, 0, 0, 0);
-                if (!isNaN(sDate)) {
-                    currentDayOffset = Math.round((sDate - today) / 86400000);
-                }
-            }
-
-            let prevMinsRaw = -1;
-
+            // Nu när databasen ger oss rena minuter, slipper vi räkna om tid!
             train.timetable.forEach(stop => {
                 let stIdx = stations.findIndex(s => s.sign === stop.stationSign);
                 if (stIdx !== -1) {
-                    let arrMins = null, depMins = null;
-                    
-                    if (stop.arrival && stop.arrival.trim() !== "") {
-                        const [h, m] = stop.arrival.split(':').map(Number);
-                        if (!isNaN(h) && !isNaN(m)) {
-                            let minsRaw = h * 60 + m;
-                            if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) { currentDayOffset++; }
-                            prevMinsRaw = minsRaw;
-                            arrMins = minsRaw + (currentDayOffset * 24 * 60);
-                        }
-                    }
-                    
-                    if (stop.departure && stop.departure.trim() !== "") {
-                        const [h, m] = stop.departure.split(':').map(Number);
-                        if (!isNaN(h) && !isNaN(m)) {
-                            let minsRaw = h * 60 + m;
-                            if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) { currentDayOffset++; }
-                            prevMinsRaw = minsRaw;
-                            depMins = minsRaw + (currentDayOffset * 24 * 60);
-                        }
-                    }
-                    
-                    if (arrMins !== null || depMins !== null) {
-                        convertedTimetable.push({ 
-                            station: stIdx, 
-                            arrival: arrMins !== null ? arrMins : depMins, 
-                            departure: depMins !== null ? depMins : arrMins 
-                        });
-                    }
+                    convertedTimetable.push({ 
+                        station: stIdx, 
+                        arrival: stop.arrival, 
+                        departure: stop.departure 
+                    });
                 }
             });
             
             convertedTimetable.sort((a, b) => a.arrival - b.arrival);
-            return { id: train.id, startDate: train.startDate, timetable: convertedTimetable };
+            
+            // Snygga till datumet om Postgres skickar med en tidszon (t.ex. 2026-03-26T00:00:00.000Z)
+            let sDate = train.startDate ? train.startDate.split('T')[0] : "";
+            
+            return { id: train.id, startDate: sDate, timetable: convertedTimetable };
         }).filter(t => t.timetable.length >= 2);
 
     } catch (error) {
@@ -194,32 +161,16 @@ async function loadTrainsFromDatabase() {
 async function saveTrainsToDatabase() {
     if (!activeGraphId) return;
     
-    let today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     let exportTrains = trains.map(train => {
-        let firstTime = train.timetable[0].arrival !== null ? train.timetable[0].arrival : train.timetable[0].departure;
-        let actualStartDate = new Date(today.getTime() + firstTime * 60000);
-        let startDateStr = actualStartDate.getFullYear() + "-" + 
-                           String(actualStartDate.getMonth()+1).padStart(2,'0') + "-" + 
-                           String(actualStartDate.getDate()).padStart(2,'0');
-
         let exportTimetable = train.timetable.map(node => {
-            let stSign = stations[node.station].sign;
-            const formatHHMM = (mins) => {
-                let m = Math.floor(((mins % 60) + 60) % 60);
-                let h = Math.floor(mins / 60);
-                let displayH = ((h % 24) + 24) % 24;
-                return `${displayH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-            };
             return {
-                stationSign: stSign,
-                arrival: formatHHMM(node.arrival),
-                departure: formatHHMM(node.departure)
+                stationSign: stations[node.station].sign,
+                arrival: node.arrival,     // Skickar rena minuter (Integer) till databasen
+                departure: node.departure  // Skickar rena minuter (Integer) till databasen
             };
         });
         
-        return { id: train.id, startDate: startDateStr, timetable: exportTimetable };
+        return { id: train.id, startDate: train.startDate, timetable: exportTimetable };
     });
     
     try {
