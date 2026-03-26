@@ -34,6 +34,7 @@ let currentStartTime = currentRealMinutes - (viewDuration * nowOffsetPercentage)
 
 let needsRedraw = true; 
 
+// OBS: Graferna läses fortfarande från localStorage tills vi bygger om admin.js
 let savedGraphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
 if (savedGraphs.length === 0) {
     savedGraphs = [{
@@ -62,7 +63,6 @@ let expandedWorkId = null, editingWorkId = null;
 let selectedTrainIndex = null, draggingNode = null, activeNode = null; 
 let conflicts = [], conflictSegments = new Set(), draggingConflict = null;
 
-// Variabler för tooltip-menyn
 let activeTooltipNode = null;
 let tooltipHitboxes = null;
 
@@ -82,13 +82,15 @@ function loadGraphSelector() {
     loadGraphData(savedGraphs[0].id);
 }
 
-function loadGraphData(graphId) {
+// NYTT: Ändrad till async eftersom vi nu måste vänta på databasen
+async function loadGraphData(graphId) {
     activeGraphId = graphId;
     const graph = savedGraphs.find(g => g.id === graphId);
     stations = graph && graph.stations ? graph.stations.sort((a, b) => a.km - b.km) : [];
     
-    loadTrainsFromDatabase(); 
-    loadWorksFromDatabase();
+    // Hämta tåg och arbeten från vår nya Vercel-backend
+    await loadTrainsFromDatabase(); 
+    await loadWorksFromDatabase();
     
     expandedWorkId = null;
     selectedTrainIndex = null;
@@ -101,84 +103,96 @@ function loadGraphData(graphId) {
     needsRedraw = true;
 }
 
-// --- DATABASHANTERING (TÅG & ARBETEN) ---
+// ==========================================
+// API / DATABASHANTERING (Vercel & Neon)
+// ==========================================
 
-function loadWorksFromDatabase() {
-    let allWorksDb = JSON.parse(localStorage.getItem('mto_works')) || {};
-    trackWorks = allWorksDb[activeGraphId] || [];
-}
-
-function saveWorksToDatabase() {
+async function loadWorksFromDatabase() {
     if (!activeGraphId) return;
-    let allWorksDb = JSON.parse(localStorage.getItem('mto_works')) || {};
-    allWorksDb[activeGraphId] = trackWorks;
-    localStorage.setItem('mto_works', JSON.stringify(allWorksDb));
-}
-
-function loadTrainsFromDatabase() {
-    let allTrainsDb = JSON.parse(localStorage.getItem('mto_xml_trains')) || {};
-    let savedDbTrains = allTrainsDb[activeGraphId] || [];
-    
-    let today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    trains = savedDbTrains.map(train => {
-        let convertedTimetable = [];
-        let currentDayOffset = 0;
-        
-        if (train.startDate) {
-            let sDate = new Date(train.startDate);
-            sDate.setHours(0, 0, 0, 0);
-            if (!isNaN(sDate)) {
-                currentDayOffset = Math.round((sDate - today) / 86400000);
-            }
+    try {
+        const response = await fetch(`/api/works?graphId=${activeGraphId}`);
+        if (response.ok) {
+            trackWorks = await response.json();
+        } else {
+            trackWorks = [];
         }
-
-        let prevMinsRaw = -1;
-
-        train.timetable.forEach(stop => {
-            let stIdx = stations.findIndex(s => s.sign === stop.stationSign);
-            if (stIdx !== -1) {
-                let arrMins = null, depMins = null;
-                
-                if (stop.arrival && stop.arrival.trim() !== "") {
-                    const [h, m] = stop.arrival.split(':').map(Number);
-                    if (!isNaN(h) && !isNaN(m)) {
-                        let minsRaw = h * 60 + m;
-                        if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) { currentDayOffset++; }
-                        prevMinsRaw = minsRaw;
-                        arrMins = minsRaw + (currentDayOffset * 24 * 60);
-                    }
-                }
-                
-                if (stop.departure && stop.departure.trim() !== "") {
-                    const [h, m] = stop.departure.split(':').map(Number);
-                    if (!isNaN(h) && !isNaN(m)) {
-                        let minsRaw = h * 60 + m;
-                        if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) { currentDayOffset++; }
-                        prevMinsRaw = minsRaw;
-                        depMins = minsRaw + (currentDayOffset * 24 * 60);
-                    }
-                }
-                
-                if (arrMins !== null || depMins !== null) {
-                    convertedTimetable.push({ 
-                        station: stIdx, 
-                        arrival: arrMins !== null ? arrMins : depMins, 
-                        departure: depMins !== null ? depMins : arrMins 
-                    });
-                }
-            }
-        });
-        
-        convertedTimetable.sort((a, b) => a.arrival - b.arrival);
-        return { id: train.id, startDate: train.startDate, timetable: convertedTimetable };
-    }).filter(t => t.timetable.length >= 2);
+    } catch (error) {
+        console.error("Kunde inte hämta arbeten:", error);
+        trackWorks = [];
+    }
 }
 
-function saveTrainsToDatabase() {
+async function loadTrainsFromDatabase() {
     if (!activeGraphId) return;
-    let allTrainsDb = JSON.parse(localStorage.getItem('mto_xml_trains')) || {};
+    try {
+        const response = await fetch(`/api/trains?graphId=${activeGraphId}`);
+        let savedDbTrains = [];
+        if (response.ok) savedDbTrains = await response.json();
+        
+        let today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        trains = savedDbTrains.map(train => {
+            let convertedTimetable = [];
+            let currentDayOffset = 0;
+            
+            if (train.startDate) {
+                let sDate = new Date(train.startDate);
+                sDate.setHours(0, 0, 0, 0);
+                if (!isNaN(sDate)) {
+                    currentDayOffset = Math.round((sDate - today) / 86400000);
+                }
+            }
+
+            let prevMinsRaw = -1;
+
+            train.timetable.forEach(stop => {
+                let stIdx = stations.findIndex(s => s.sign === stop.stationSign);
+                if (stIdx !== -1) {
+                    let arrMins = null, depMins = null;
+                    
+                    if (stop.arrival && stop.arrival.trim() !== "") {
+                        const [h, m] = stop.arrival.split(':').map(Number);
+                        if (!isNaN(h) && !isNaN(m)) {
+                            let minsRaw = h * 60 + m;
+                            if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) { currentDayOffset++; }
+                            prevMinsRaw = minsRaw;
+                            arrMins = minsRaw + (currentDayOffset * 24 * 60);
+                        }
+                    }
+                    
+                    if (stop.departure && stop.departure.trim() !== "") {
+                        const [h, m] = stop.departure.split(':').map(Number);
+                        if (!isNaN(h) && !isNaN(m)) {
+                            let minsRaw = h * 60 + m;
+                            if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) { currentDayOffset++; }
+                            prevMinsRaw = minsRaw;
+                            depMins = minsRaw + (currentDayOffset * 24 * 60);
+                        }
+                    }
+                    
+                    if (arrMins !== null || depMins !== null) {
+                        convertedTimetable.push({ 
+                            station: stIdx, 
+                            arrival: arrMins !== null ? arrMins : depMins, 
+                            departure: depMins !== null ? depMins : arrMins 
+                        });
+                    }
+                }
+            });
+            
+            convertedTimetable.sort((a, b) => a.arrival - b.arrival);
+            return { id: train.id, startDate: train.startDate, timetable: convertedTimetable };
+        }).filter(t => t.timetable.length >= 2);
+
+    } catch (error) {
+        console.error("Kunde inte hämta tåg:", error);
+        trains = [];
+    }
+}
+
+async function saveTrainsToDatabase() {
+    if (!activeGraphId) return;
     
     let today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -208,8 +222,15 @@ function saveTrainsToDatabase() {
         return { id: train.id, startDate: startDateStr, timetable: exportTimetable };
     });
     
-    allTrainsDb[activeGraphId] = exportTrains;
-    localStorage.setItem('mto_xml_trains', JSON.stringify(allTrainsDb));
+    try {
+        await fetch('/api/trains', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ graphId: activeGraphId, trains: exportTrains })
+        });
+    } catch (error) {
+        console.error("Kunde inte spara tåg:", error);
+    }
 }
 
 let saveDbTimeout;
@@ -527,7 +548,6 @@ function getHoveredNode(mx, my) {
         const distDep = Math.hypot(mx - nx, my - yDep);
 
         if (node.arrival === node.departure) {
-            // Ligger de på samma, välj ALLTID avgång om man klickar direkt på ringen
             if (distArr < minDistance) {
                 minDistance = distArr;
                 bestNode = { trainIndex: selectedTrainIndex, nodeIndex: j, type: 'departure' };
@@ -631,14 +651,14 @@ function drawGraph() {
     ctx.textAlign = 'right';
     const wmX = canvas.width - margin.right - 20;
     const wmY = canvas.height - margin.bottom - 40;
-ctx.globalAlpha = 0.06; 
+    ctx.globalAlpha = 0.06; 
     ctx.font = '900 64px system-ui, sans-serif';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('S K U T T', wmX, wmY); // <-- Ändrat här
+    ctx.fillText('S K U T T', wmX, wmY); 
     ctx.globalAlpha = 0.3; 
     ctx.font = '600 14px system-ui, sans-serif';
     ctx.fillStyle = theme.simLine; 
-    ctx.fillText('Smart Kontrollverktyg för Uppdatering av Trassliga Tidtabeller', wmX, wmY + 20); // <-- Ändrat här
+    ctx.fillText('Smart Kontrollverktyg för Uppdatering av Trassliga Tidtabeller', wmX, wmY + 20); 
     ctx.restore();
 
     drawNowLine();
@@ -847,23 +867,19 @@ canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
     startPos.x = e.clientX - rect.left; startPos.y = e.clientY - rect.top;
     
-    // 1. Prioritera att dra "Nu-linjen"
     if (Math.abs(startPos.y - getY(currentRealMinutes)) < 12) {
         isDraggingNowLine = true; isTrackingNow = true; canvas.style.cursor = 'ns-resize'; return; 
     }
 
-    // 2. STENHÅRD PRIORITET: Klicka på konfliktringen
     let hitConflict = conflicts.find(c => Math.hypot(startPos.x - c.x, startPos.y - c.y) < 12);
     if (hitConflict) { 
         draggingConflict = hitConflict; 
         canvas.style.cursor = 'move'; 
-        return; // Avbryter allt annat så ringen är skyddad!
+        return; 
     }
 
-    // 3. Kolla om vi klickade inuti ett aktivt tooltip
     if (tooltipHitboxes) {
         if (startPos.x >= tooltipHitboxes.arrRect.x && startPos.x <= tooltipHitboxes.arrRect.x + tooltipHitboxes.arrRect.w) {
-            // Klickade på Ankomst?
             if (startPos.y >= tooltipHitboxes.arrRect.y && startPos.y <= tooltipHitboxes.arrRect.y + tooltipHitboxes.arrRect.h) {
                 draggingNode = { trainIndex: tooltipHitboxes.trainIndex, nodeIndex: tooltipHitboxes.nodeIndex, type: 'arrival' };
                 activeNode = draggingNode;
@@ -871,7 +887,6 @@ canvas.addEventListener('mousedown', (e) => {
                 needsRedraw = true;
                 return;
             }
-            // Klickade på Avgång?
             if (startPos.y >= tooltipHitboxes.depRect.y && startPos.y <= tooltipHitboxes.depRect.y + tooltipHitboxes.depRect.h) {
                 draggingNode = { trainIndex: tooltipHitboxes.trainIndex, nodeIndex: tooltipHitboxes.nodeIndex, type: 'departure' };
                 activeNode = draggingNode;
@@ -882,11 +897,9 @@ canvas.addEventListener('mousedown', (e) => {
         }
     }
 
-    // 4. Klicka direkt på en nod
     const hNode = getHoveredNode(startPos.x, startPos.y);
     if (hNode) { draggingNode = hNode; activeNode = hNode; canvas.style.cursor = 'ns-resize'; needsRedraw = true; return; }
     
-    // 5. Klicka på en tåglinje (för att t.ex. lägga till en nod)
     const hitTrain = getHitTrainIndex(startPos.x, startPos.y);
     if (hitTrain !== null) {
         selectedTrainIndex = hitTrain; activeNode = null; expandedWorkId = null;
@@ -904,7 +917,6 @@ canvas.addEventListener('mousedown', (e) => {
         renderSidebar(); needsRedraw = true; return;
     }
 
-    // 6. Dra i canvas för att bygga ett arbetsområde
     activeNode = selectedTrainIndex = null; renderSidebar();
     if (startPos.x >= margin.left && startPos.x <= canvas.width - margin.right && startPos.y >= margin.top && startPos.y <= canvas.height - margin.bottom) {
         isSelecting = true; currentMouseX = startPos.x; currentMouseY = startPos.y;
@@ -923,7 +935,6 @@ canvas.addEventListener('mousemove', (e) => {
         updateScrollFromTime(); needsRedraw = true; return;
     }
     
-    // Om vi drar i konflikten - tvinga fram pekaren och rita om!
     if (draggingConflict) { 
         canvas.style.cursor = 'move'; 
         needsRedraw = true; 
@@ -935,7 +946,6 @@ canvas.addEventListener('mousemove', (e) => {
         let newTime = Math.round(getTimeFromY(currentMouseY));
 
         if (draggingNode.type === 'arrival') {
-            // SPÄRR: Kan inte dras tidigare än föregående stations avgång
             let minAllowedTime = draggingNode.nodeIndex > 0 ? tr.timetable[draggingNode.nodeIndex - 1].departure : -Infinity;
             newTime = Math.max(newTime, minAllowedTime);
 
@@ -950,7 +960,6 @@ canvas.addEventListener('mousemove', (e) => {
                 }
             }
         } else {
-            // SPÄRR: Avgång kan inte dras tidigare än sin egen ankomst
             let diff = Math.max(newTime, node.arrival) - node.departure; 
             node.departure += diff;
             
@@ -965,7 +974,6 @@ canvas.addEventListener('mousemove', (e) => {
     if (!isSelecting) {
         let isInsideTooltip = false;
         
-        // Kolla om musen är över tooltippen
         if (tooltipHitboxes && 
             currentMouseX >= tooltipHitboxes.arrRect.x && currentMouseX <= tooltipHitboxes.arrRect.x + tooltipHitboxes.arrRect.w &&
             currentMouseY >= tooltipHitboxes.arrRect.y && currentMouseY <= tooltipHitboxes.depRect.y + tooltipHitboxes.depRect.h) {
@@ -974,7 +982,6 @@ canvas.addEventListener('mousemove', (e) => {
 
         let foundHover = isInsideTooltip ? activeTooltipNode : null;
 
-        // Om musen INTE är över tooltippen, kolla om vi hovrar en nod i grafen
         if (!isInsideTooltip && selectedTrainIndex !== null && !draggingNode) {
             let minDist = 20;
             trains[selectedTrainIndex].timetable.forEach((node, j) => {
@@ -997,7 +1004,6 @@ canvas.addEventListener('mousemove', (e) => {
             needsRedraw = true;
         }
 
-        // Muspekarens status beroende på vad vi pekar på
         if (conflicts.find(c => Math.hypot(currentMouseX - c.x, currentMouseY - c.y) < 12)) canvas.style.cursor = 'move'; 
         else if (isInsideTooltip) canvas.style.cursor = 'pointer';
         else if (Math.abs(currentMouseY - getY(currentRealMinutes)) < 12) canvas.style.cursor = 'ns-resize';
@@ -1085,7 +1091,6 @@ canvas.addEventListener('wheel', (e) => {
         const tr = trains[activeNode.trainIndex], node = tr.timetable[activeNode.nodeIndex];
         
         if (activeNode.type === 'arrival') {
-            // SPÄRR: Kan inte scrollas tidigare än föregående stations avgång
             let minAllowedTime = activeNode.nodeIndex > 0 ? tr.timetable[activeNode.nodeIndex - 1].departure : -Infinity;
             let targetTime = node.arrival + timeDelta;
             node.arrival = Math.max(targetTime, minAllowedTime);
@@ -1099,7 +1104,6 @@ canvas.addEventListener('wheel', (e) => {
                 }
             }
         } else {
-            // SPÄRR: Avgång kan inte scrollas tidigare än sin egen ankomst
             let diff = Math.max(node.arrival, node.departure + timeDelta) - node.departure; 
             node.departure += diff;
             for (let k = activeNode.nodeIndex + 1; k < tr.timetable.length; k++) { 
@@ -1153,12 +1157,12 @@ if(resetSimTimeBtn) {
 
 const clearTrainsBtn = document.getElementById('clearTrainsBtn');
 if (clearTrainsBtn) {
-    clearTrainsBtn.addEventListener('click', () => {
+    clearTrainsBtn.addEventListener('click', async () => {
         if (confirm("Vill du verkligen ta bort ALLA tåg från grafen? Detta går inte att ångra.")) {
             trains = [];
             selectedTrainIndex = null;
             activeNode = null;
-            saveTrainsToDatabase();
+            await saveTrainsToDatabase();
             renderSidebar();
             needsRedraw = true;
         }
@@ -1229,9 +1233,51 @@ function renderSidebar() {
 }
 
 window.toggleWork = (id) => { expandedWorkId = expandedWorkId === id ? null : id; renderSidebar(); needsRedraw = true; };
-window.quickSetStatus = (id, status) => { const w = trackWorks.find(x => x.id === id); if(w) { if (status === 'Startad' && w.status !== 'Startad') w.startTime = currentRealMinutes; if (status === 'Avslutad' && w.status !== 'Avslutad') w.endTime = currentRealMinutes; w.status = status; saveWorksToDatabase(); renderSidebar(); needsRedraw = true; } };
-window.deleteWork = (id) => { if(confirm("Radera anordningen?")) { trackWorks = trackWorks.filter(x => x.id !== id); expandedWorkId = null; saveWorksToDatabase(); renderSidebar(); needsRedraw = true; } };
-window.deleteSelectedTrain = () => { if (selectedTrainIndex !== null && confirm("Ta bort detta tåg helt?")) { trains.splice(selectedTrainIndex, 1); selectedTrainIndex = null; activeNode = null; saveTrainsToDatabase(); renderSidebar(); needsRedraw = true; } };
+
+// NYTT: Asynkrona metoder för API
+window.quickSetStatus = async (id, status) => { 
+    const w = trackWorks.find(x => x.id === id); 
+    if(w) { 
+        if (status === 'Startad' && w.status !== 'Startad') w.startTime = currentRealMinutes; 
+        if (status === 'Avslutad' && w.status !== 'Avslutad') w.endTime = currentRealMinutes; 
+        w.status = status; 
+        
+        try {
+            await fetch('/api/works', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...w, graph_id: activeGraphId })
+            });
+            await loadWorksFromDatabase();
+            renderSidebar(); 
+            needsRedraw = true; 
+        } catch(e) { console.error("Kunde inte uppdatera status", e); }
+    } 
+};
+
+window.deleteWork = async (id) => { 
+    if(confirm("Radera anordningen?")) { 
+        try {
+            // Kräver att ditt API kan hantera DELETE, annars failar den tyst
+            await fetch(`/api/works?id=${id}`, { method: 'DELETE' });
+            await loadWorksFromDatabase();
+            expandedWorkId = null; 
+            renderSidebar(); 
+            needsRedraw = true; 
+        } catch(e) { console.error("Kunde inte radera", e); }
+    } 
+};
+
+window.deleteSelectedTrain = async () => { 
+    if (selectedTrainIndex !== null && confirm("Ta bort detta tåg helt?")) { 
+        trains.splice(selectedTrainIndex, 1); 
+        selectedTrainIndex = null; 
+        activeNode = null; 
+        await saveTrainsToDatabase(); 
+        renderSidebar(); 
+        needsRedraw = true; 
+    } 
+};
 
 // ==========================================
 // ARBETSMEDAL OCH FORMULÄR
@@ -1404,7 +1450,8 @@ if(document.getElementById('addWorkBtn')) {
 
 if(document.getElementById('cancelWorkBtn')) document.getElementById('cancelWorkBtn').onclick = () => document.getElementById('workModal').style.display = 'none';
 
-function saveMtoWork(status) {
+// NYTT: Ändrad till asynkron för att skicka JSON-data via fetch
+async function saveMtoWork(status) {
     const workType = document.getElementById('workType').value;
     const rawLabel = document.getElementById('workLabel').value;
     const trainRef = document.getElementById('workTrainReference').value;
@@ -1424,6 +1471,7 @@ function saveMtoWork(status) {
 
     const newWork = {
         id: editingWorkId || Date.now().toString(), 
+        graph_id: activeGraphId,
         label: displayLabel, 
         type: workType, 
         rawLabel: rawLabel, 
@@ -1446,108 +1494,30 @@ function saveMtoWork(status) {
         detailsText: document.getElementById('workDetails').value
     };
     
-    if (editingWorkId) { 
-        const idx = trackWorks.findIndex(w => w.id === editingWorkId); 
-        if(idx > -1) trackWorks[idx] = newWork; 
-        editingWorkId = null; 
-    } else {
-        trackWorks.push(newWork);
+    try {
+        await fetch('/api/works', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newWork)
+        });
+        
+        await loadWorksFromDatabase();
+        document.getElementById('workModal').style.display = 'none'; 
+        renderSidebar(); 
+        needsRedraw = true;
+    } catch (error) {
+        console.error("Kunde inte spara:", error);
+        alert("Något gick snett när datan skulle sparas till molnet.");
     }
-    
-    document.getElementById('workModal').style.display = 'none'; 
-    saveWorksToDatabase();
-    renderSidebar(); 
-    needsRedraw = true;
 }
 
 if(document.getElementById('planWorkBtn')) document.getElementById('planWorkBtn').onclick = () => saveMtoWork('Planerad');
 if(document.getElementById('startWorkBtn')) document.getElementById('startWorkBtn').onclick = () => saveMtoWork('Startad');
 if(document.getElementById('finishWorkBtn')) document.getElementById('finishWorkBtn').onclick = () => saveMtoWork('Avslutad');
 
-
 // ==========================================
-// XML IMPORT OCH PARSNING (GRAF-VYN)
+// UPSTART AV SIDAN
 // ==========================================
-const importXmlBtn = document.getElementById('importXmlBtn');
-const xmlFileInput = document.getElementById('xmlFileInput');
-if(importXmlBtn) {
-    importXmlBtn.addEventListener('click', () => xmlFileInput.click());
-    xmlFileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0]; if (!file) return;
-        const reader = new FileReader(); reader.onload = (event) => { parseXMLTimetable(event.target.result); xmlFileInput.value = ''; }; reader.readAsText(file);
-    });
-}
-
-function parseXMLTimetable(xmlString) {
-    try {
-        const parser = new DOMParser(); 
-        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-        const trainNodes = xmlDoc.getElementsByTagName("Train");
-        
-        let allTrainsDb = JSON.parse(localStorage.getItem('mto_xml_trains')) || {};
-        let isReplace = false;
-        
-        let hasAnyTrains = Object.values(allTrainsDb).some(arr => arr.length > 0);
-        if (hasAnyTrains) {
-            isReplace = confirm("Databasen innehåller redan tåg.\n\nKlicka OK för att ERSÄTTA (tömmer alla grafer först).\nKlicka Avbryt för att LÄGGA TILL utöver de gamla.");
-            if (isReplace) {
-                allTrainsDb = {}; 
-            }
-        }
-
-        // Loopa igenom dina grafer
-        savedGraphs.forEach(graph => {
-            if (!allTrainsDb[graph.id]) allTrainsDb[graph.id] = [];
-            let graphStations = graph.stations || [];
-            let graphImportedTrains = [];
-
-            for (let i = 0; i < trainNodes.length; i++) {
-                const tNode = trainNodes[i];
-                const tId = tNode.getAttribute("id");
-                const startDateAttr = tNode.getAttribute("startDate"); 
-                const stopNodes = tNode.getElementsByTagName("Stop");
-                
-                let timetable = [];
-                
-                for (let j = 0; j < stopNodes.length; j++) {
-                    const sNode = stopNodes[j];
-                    const sign = sNode.getAttribute("sign");
-                    
-                    const stIdx = graphStations.findIndex(s => s.sign === sign);
-                    
-                    if (stIdx !== -1) {
-                        let arrStr = sNode.getAttribute("arrival") || "";
-                        let depStr = sNode.getAttribute("departure") || "";
-                        
-                        // Spara tiderna exakt som de står (HH:MM) till databasen
-                        if (arrStr.trim() !== "" || depStr.trim() !== "") {
-                            timetable.push({ 
-                                stationSign: sign, 
-                                arrival: arrStr, 
-                                departure: depStr 
-                            });
-                        }
-                    }
-                }
-                
-                if (timetable.length >= 2) {
-                    graphImportedTrains.push({ id: tId, startDate: startDateAttr, timetable: timetable });
-                }
-            }
-            
-            allTrainsDb[graph.id] = allTrainsDb[graph.id].concat(graphImportedTrains);
-        });
-
-        localStorage.setItem('mto_xml_trains', JSON.stringify(allTrainsDb));
-        
-        loadTrainsFromDatabase();
-        needsRedraw = true;
-        alert(`Klart! Tågen har analyserats och rätt delar av tidtabellen har lagts in i dina berörda grafer.`);
-    } catch (err) {
-        alert("Kunde inte läsa XML-filen. Kontrollera formatet."); console.error(err);
-    }
-}
-// Startar upp allting
 if(document.getElementById('activeGraphSelect')) {
     loadGraphSelector();
     setTimeout(resizeCanvas, 50);
