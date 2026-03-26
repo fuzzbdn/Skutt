@@ -605,15 +605,17 @@ export function setupUI() {
         state.needsRedraw = true; 
     }, 1000);
 
-    function renderLoop() {
+function renderLoop() {
         if (state.needsRedraw) {
             drawGraph();
-            renderSidebar(); // ÅTERSTÄLLD: Bygger sidomenyn varje gång grafen ritas om!
             state.needsRedraw = false;
         }
+        
+        // NYTT: Bygg bara om menyn om informationen har ändrats!
+        if (state.needsSidebarUpdate) {
+            renderSidebar();
+            state.needsSidebarUpdate = false;
+        }
+        
         requestAnimationFrame(renderLoop);
     }
-
-    setTimeout(resizeCanvas, 50);
-    requestAnimationFrame(renderLoop);
-}
