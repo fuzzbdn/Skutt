@@ -41,7 +41,6 @@ export function updateTrainLanes() {
     }
 }
 
-// ÅTERSTÄLLD: Hittar alla linjekorsningar (tågmöten)
 export function updateConflicts() {
     state.conflicts = [];
     state.conflictSegments.clear();
@@ -93,7 +92,6 @@ export function updateConflicts() {
     }
 }
 
-// ÅTERSTÄLLD: Ritar de röda ringarna
 export function drawConflicts() {
     state.conflicts.forEach(c => {
         if(c.y < margin.top || c.y > canvas.height - margin.bottom) return; 
@@ -107,7 +105,7 @@ export function drawGraph() {
     if (!ctx || state.stations.length === 0) return;
     
     updateTrainLanes(); 
-    updateConflicts(); // Måste köras varje frame!
+    updateConflicts(); 
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -130,15 +128,24 @@ export function drawGraph() {
         ctx.setLineDash([]); ctx.fillStyle = theme.timeLabel; ctx.fillText(formatTime(time), margin.left - 10, y + 4);
     }
 
-    // Banarbeten
+    // Banarbeten (NU ÅTERSTÄLLDA TILL ORIGINALUTSEENDET!)
     const viewEnd = state.currentStartTime + state.viewDuration;
     state.trackWorks.forEach(work => {
+        // Säkerhetsspärr om datan är ofullständig
+        if (work.startStation === undefined || work.endStation === undefined) return;
+        if (isNaN(work.startTime) || isNaN(work.endTime)) return;
         if (work.endTime < state.currentStartTime || work.startTime > viewEnd) return;
 
         let minSt = Math.min(work.startStation, work.endStation);
         let maxSt = Math.max(work.startStation, work.endStation);
+        
+        // Här kollar vi om parenteserna är i-kryssade eller inte
+        let incMin = work.startStation === minSt ? work.incStart : work.incEnd;
+        let incMax = work.endStation === maxSt ? work.incEnd : work.incStart;
+        
         let x1 = getX(minSt, canvas.width);
         let x2 = getX(maxSt, canvas.width);
+
         const yBottom = Math.max(getY(work.startTime, canvas.height), getY(work.endTime, canvas.height));
         const yTop = Math.min(getY(work.startTime, canvas.height), getY(work.endTime, canvas.height));
         const midX = (x1 + x2) / 2;
@@ -148,13 +155,17 @@ export function drawGraph() {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'; 
             let boxX = (minSt === maxSt) ? x1 - 5 : x1;
             let boxW = (minSt === maxSt) ? 10 : (x2 - x1);
+            
             ctx.fillRect(boxX - 10, yTop - 10, boxW + 20, (yBottom - yTop) + 20);
-            ctx.strokeStyle = workColor; ctx.setLineDash([4, 4]); ctx.lineWidth = 1; 
+            ctx.strokeStyle = workColor; 
+            ctx.setLineDash([4, 4]); ctx.lineWidth = 1; 
             ctx.strokeRect(boxX - 10, yTop - 10, boxW + 20, (yBottom - yTop) + 20); 
             ctx.setLineDash([]);
         }
 
         ctx.beginPath(); ctx.strokeStyle = workColor; ctx.lineWidth = 2.5;
+        
+        // Dra vågräta streck
         if (minSt === maxSt) {
             ctx.moveTo(x1 - 5, yTop); ctx.lineTo(x1 + 5, yTop); 
             ctx.moveTo(x1 - 5, yBottom); ctx.lineTo(x1 + 5, yBottom); 
@@ -162,11 +173,28 @@ export function drawGraph() {
             ctx.moveTo(x1, yTop); ctx.lineTo(x2, yTop); 
             ctx.moveTo(x1, yBottom); ctx.lineTo(x2, yBottom); 
         }
-        
+
+        // Dra lodräta streck
         for (let i = 0; i < state.stations.length; i++) {
             let sx = getX(i, canvas.width);
             if (sx >= x1 - 0.1 && sx <= x2 + 0.1) {
-                ctx.moveTo(sx, yTop); ctx.lineTo(sx, yBottom);
+                let drawVert = true;
+                if (minSt !== maxSt) {
+                    // Dölj lodräta streck vid kanterna om de är "exkluderade" (inom parentes)
+                    if (i === minSt && !incMin) drawVert = false;
+                    if (i === maxSt && !incMax) drawVert = false;
+                }
+                if (drawVert) {
+                    ctx.moveTo(sx, yTop); ctx.lineTo(sx, yBottom);
+                }
+            }
+            
+            // Dra lodräta streck mitt emellan stationerna också
+            if (i < state.stations.length - 1) {
+                let mx = (getX(i, canvas.width) + getX(i+1, canvas.width)) / 2;
+                if (mx >= x1 - 0.1 && mx <= x2 + 0.1) {
+                    ctx.moveTo(mx, yTop); ctx.lineTo(mx, yBottom);
+                }
             }
         }
         ctx.stroke();
@@ -201,7 +229,6 @@ export function drawGraph() {
             const endX = getNodeX(i, j), endY = getY(train.timetable[j].arrival, canvas.height);
             ctx.beginPath(); ctx.lineWidth = isSelected ? 2.5 : 1.8;
             
-            // Om linjen är röd = konflikt
             ctx.strokeStyle = state.conflictSegments.has(`${i}-${j-1}`) ? '#ff4d4d' : (isSelected ? '#33ccff' : theme.trainLine);
             ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
             
@@ -239,10 +266,8 @@ export function drawGraph() {
         }
     });
 
-    // RITA UT KONFLIKTERNA
     drawConflicts();
 
-    // Ritar streckad linje när man drar en konflikt till en station
     if (state.draggingConflict) {
         ctx.beginPath(); ctx.moveTo(state.draggingConflict.x, state.draggingConflict.y); ctx.lineTo(state.currentMouseX, state.currentMouseY);
         ctx.strokeStyle = '#ff4d4d'; ctx.setLineDash([5, 5]); ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
