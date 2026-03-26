@@ -1,5 +1,15 @@
 import { state } from './state.js';
 
+// --- HJÄLPFUNKTION: Tolka alltid tid till minuter för grafen ---
+function parseToMins(val) {
+    if (typeof val === 'number') return Math.round(val);
+    if (typeof val === 'string' && val.includes(':')) {
+        const parts = val.split(':');
+        return (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
+    }
+    return parseInt(val, 10) || 0;
+}
+
 export async function loadWorksFromDatabase() {
     if (!state.activeGraphId) return;
     try {
@@ -10,7 +20,9 @@ export async function loadWorksFromDatabase() {
             const rawWorks = await response.json();
             state.trackWorks = rawWorks.map(w => ({
                 id: w.id, type: w.type, label: w.label, status: w.status,
-                startTime: w.start_time, endTime: w.end_time,
+                // Tvinga till minuter för grafen!
+                startTime: parseToMins(w.start_time), 
+                endTime: parseToMins(w.end_time),
                 startStation: w.start_station, endStation: w.end_station,
                 track: w.track, blockedArea: w.blocked_area,
                 incStart: w.inc_start ?? true, incEnd: w.inc_end ?? true,
@@ -43,8 +55,17 @@ export async function loadTrainsFromDatabase() {
             state.trains = savedDbTrains.map(train => {
                 let timetable = train.timetable.map(stop => {
                     let stIdx = state.stations.findIndex(s => s.sign === stop.stationSign);
-                    return stIdx !== -1 ? { station: stIdx, arrival: stop.arrival, departure: stop.departure } : null;
+                    // Tvinga till minuter för grafen!
+                    return stIdx !== -1 ? { 
+                        station: stIdx, 
+                        arrival: parseToMins(stop.arrival), 
+                        departure: parseToMins(stop.departure) 
+                    } : null;
                 }).filter(n => n !== null);
+                
+                // MÅSTE sorteras i tid för att linjen ska ritas från vänster till höger
+                timetable.sort((a, b) => a.arrival - b.arrival);
+                
                 return { id: train.id, startDate: train.startDate, timetable };
             }).filter(t => t.timetable.length >= 2);
             state.needsRedraw = true;
@@ -60,7 +81,8 @@ export async function saveTrainsToDatabase() {
             id: t.id, startDate: t.startDate,
             timetable: t.timetable.map(n => ({
                 stationSign: state.stations[n.station].sign,
-                arrival: n.arrival, departure: n.departure
+                arrival: Math.round(n.arrival), 
+                departure: Math.round(n.departure)
             }))
         }))
     };
