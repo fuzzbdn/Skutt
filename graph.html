@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKUTT - Grafvy</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="toolbar">
+        <div style="display: flex; align-items: center; gap: 10px; margin-right: 15px; user-select: none;">
+            <svg width="36" height="36" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                <rect x="0" y="0" width="40" height="40" rx="8" fill="#25262b" stroke="#373a40" />
+                <path d="M8,32 L32,8" stroke="#eed57e" stroke-width="3" stroke-linecap="round"/>
+                <path d="M8,8 L32,32" stroke="#33ccff" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="20" cy="20" r="6" fill="#1a1b1e" stroke="#ff4d4d" stroke-width="2.5"/>
+                <circle cx="20" cy="20" r="2" fill="#ffffff" />
+            </svg>
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-weight: 900; font-size: 1.2em; color: #ececec; letter-spacing: 2px; line-height: 1;">SKUTT</span>
+                <span style="font-size: 0.55em; color: #888888; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Smart Kontrollverktyg</span>
+            </div>
+        </div>
+        
+        <select id="activeGraphSelect" style="background-color: #25262b; color: #33ccff; border: 1px solid #373a40; padding: 6px 12px; border-radius: 4px; font-weight: bold;"></select>
+        
+        <button onclick="window.location.href='admin.html'">⚙️ Grafer</button>
+        <button onclick="window.location.href='timetable.html'">📅 Dagsplanering</button>
+        
+        <div style="width: 1px; height: 20px; background-color: #373a40; margin: 0 5px;"></div>
+        
+        <input type="time" id="simulatedTimeInput" style="background-color: #25262b; color: #ececec; border: 1px solid #373a40; padding: 6px; border-radius: 4px;">
+        <button id="setSimTimeBtn" style="border-color: #e67e22; color: #e67e22; background: transparent;">Ställ tid</button>
+        <button id="resetSimTimeBtn" style="border-color: #ff6b6b; color: #ff6b6b; background: transparent; display: none;" title="Återgå till datorns verkliga klocka">Sluta simulera</button>
+
+        <button id="snapToNowBtn" style="background-color: transparent; border: 1px solid #33ccff; color: #33ccff; margin-left: auto;">📍 Följ tid</button>
+    </div>
+    
+    <div class="main-area">
+        <div class="canvas-container" id="scrollContainer">
+            <canvas id="trainGraph"></canvas>
+            <div id="scrollContent" class="scroll-content"></div>
+        </div>
+        
+        <div class="sidebar" id="sidebar">
+            <h3>Arbetsdetaljer</h3>
+            <div id="workInfo" class="work-info">
+                Klicka på en anordning i grafen för att se detaljer här.
+            </div>
+        </div>
+    </div>
+
+    <div id="workModal" class="modal">
+        <div class="modal-content mto-modal mto-compact">
+            <div class="modal-top-bar">
+                <div class="status-box" id="workStatusBox">A</div>
+                <div style="display:flex; gap: 5px; align-items: center; flex: 1;">
+                    <select id="workType" class="type-select" onchange="document.getElementById('workTrainReference').style.display = this.value === 'Efter tåg' ? 'block' : 'none'">
+                        <option value="A-s">A-skydd</option>
+                        <option value="E-s">E-skydd</option>
+                        <option value="L-s">L-skydd</option>
+                        <option value="S-s">S-skydd</option>
+                        <option value="D-s">D-skydd</option>
+                        <option value="Spf">Spärrfärd</option>
+                        <option value="Vxl">Växling</option>
+                        <option value="Efter tåg">Efter tåg</option>
+                    </select>
+                    <input type="text" id="workTrainReference" placeholder="Tågnr" style="width: 70px; display: none;">
+                </div>
+                <div style="flex: 2; display: flex; align-items: center; gap: 6px;">
+                    <label style="color:#909296; font-size:0.75em; font-weight: bold; text-transform: uppercase;">Beteckning</label>
+                    <input type="text" id="workLabel" placeholder="T.ex. Spårbyte">
+                </div>
+            </div>
+
+            <div class="mto-form-row-multi">
+                <div class="form-col" style="flex: 2;">
+                    <label>Område (Justera med pilar)</label>
+                    <div class="station-inputs" style="display: flex; align-items: center; justify-content: space-between; background: #25262b; border: 1px solid #373a40; border-radius: 4px; padding: 4px 6px;">
+                        <button type="button" id="btnExpandLeft" class="arrow-btn" title="Utöka vänster">◀</button>
+                        <button type="button" id="btnShrinkLeft" class="arrow-btn" title="Krymp från vänster">▶</button>
+                        <div id="workAreaDisplay" style="flex-grow: 1; text-align: center; color: #33ccff; font-size: 0.9em; font-weight: bold; white-space: nowrap; overflow: hidden;">-</div>
+                        <button type="button" id="btnShrinkRight" class="arrow-btn" title="Krymp från höger">◀</button>
+                        <button type="button" id="btnExpandRight" class="arrow-btn" title="Utöka höger">▶</button>
+                        
+                        <input type="hidden" id="workStartStation">
+                        <input type="hidden" id="incStart">
+                        <input type="hidden" id="workEndStation">
+                        <input type="hidden" id="incEnd">
+                    </div>
+                </div>
+                <div class="form-col" style="flex: 1.2;">
+                    <label>Tid</label>
+                    <div class="time-inputs" style="display: flex; align-items: center; gap: 4px;">
+                        <input type="time" id="workStartTime">
+                        <span style="color:#5c5f66;">-</span>
+                        <input type="time" id="workEndTime">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mto-form-row-multi">
+                <div class="form-col" style="flex: 0.5;">
+                    <label>Spår</label>
+                    <input type="text" id="workTrack" placeholder="1, 2">
+                </div>
+                <div class="form-col" style="flex: 0.8;">
+                    <label>Slutplats</label>
+                    <input type="text" id="workEndPlace" placeholder="Dp">
+                </div>
+                <div class="form-col" style="flex: 2;">
+                    <label>Gränspunkter</label>
+                    <input type="text" id="workBounds" placeholder="Tavlor, signaler...">
+                </div>
+            </div>
+
+            <div class="mto-form-row-multi">
+                <div class="form-col" style="flex: 1;">
+                    <label>Avspärrat dp</label>
+                    <input type="text" id="workBlockedArea" placeholder="Auto-ifyllt">
+                </div>
+                <div class="form-col" style="flex: 2;">
+                    <label>Låsning / Lokalfrigivning</label>
+                    <input type="text" id="workSwitches" placeholder="T.ex. Samtliga, vx 102 Hö...">
+                </div>
+            </div>
+
+            <div class="mto-form-row-multi">
+                <div class="form-col" style="flex: 1;">
+                    <label>Övrigt</label>
+                    <input type="text" id="workDetails" placeholder="Fritext...">
+                </div>
+            </div>
+
+            <div class="mto-form-row-multi">
+                <div class="form-col" style="flex: 1.5;">
+                    <label>(H)Tsm</label>
+                    <input type="text" id="workContactName" placeholder="Namn">
+                </div>
+                <div class="form-col" style="flex: 1;">
+                    <label>Telefon</label>
+                    <input type="text" id="workContactPhone" placeholder="07x...">
+                </div>
+                <div class="form-col" style="flex: 1;">
+                    <label>Samråd nr</label>
+                    <input type="text" id="workConsultation" placeholder="12345">
+                </div>
+            </div>
+
+            <div class="modal-actions mto-compact-actions">
+                <button id="planWorkBtn" style="border-color: #ffd700; color: #ffd700;">◷ Planera</button>
+                <button id="startWorkBtn" style="border-color: #ff4d4d; color: #ff4d4d;">▶ Starta</button>
+                <button id="finishWorkBtn" style="border-color: #888888; color: #888888;">■ Avsluta</button>
+                <button id="cancelWorkBtn" class="btn-cancel" style="margin-left: auto;">Avbryt</button>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
