@@ -234,6 +234,7 @@ function renderSidebar() {
     const container = document.getElementById('workInfo'); 
     if(!container) return;
     
+    // 1. Om ett tåg är valt, visa tåginfon
     if (state.selectedTrainIndex !== null) {
         const tr = state.trains[state.selectedTrainIndex];
         container.innerHTML = `
@@ -258,12 +259,18 @@ function renderSidebar() {
         return;
     }
 
+    // 2. Dela upp arbetena i "Aktiva" och "Avslutade"
+    const activeWorks = state.trackWorks.filter(w => w.status !== 'Avslutad');
+    const finishedWorks = state.trackWorks.filter(w => w.status === 'Avslutad');
+
     let html = `<div class="work-list">`;
-    state.trackWorks.forEach(work => {
+
+    // En hjälpfunktion för att bygga själva HTML-kortet för varje arbete
+    const buildCard = (work) => {
         let color = work.status === 'Planerad' ? '#ffd700' : (work.status === 'Avslutad' ? '#666666' : '#ff4d4d'); 
         let isExpanded = work.id === state.expandedWorkId;
         
-        html += `
+        return `
             <div class="work-card ${isExpanded ? 'selected' : ''}" style="border-left-color: ${color}">
                 <div class="work-card-header" onclick="window.toggleWork('${work.id}')">
                     <div class="work-card-title"><span>${work.label || 'Ny anordning'}</span> <span style="color:${color}">${work.status.charAt(0)}</span></div>
@@ -282,7 +289,20 @@ function renderSidebar() {
                     <button class="sidebar-btn full-width" style="border-color:#ff4d4d; color:#ff4d4d;" onclick="window.deleteWork('${work.id}')">🗑️ Ta bort anordning</button>
                 </div>` : ''}
             </div>`;
-    });
+    };
+
+    // 3. Rendera Planerade och Startade arbeten först
+    activeWorks.forEach(work => { html += buildCard(work); });
+
+    // 4. Rendera Avslutade arbeten längst ner (med en snygg avskiljare!)
+    if (finishedWorks.length > 0) {
+        if (activeWorks.length > 0) {
+            html += `<div style="margin: 15px 0 10px 0; border-bottom: 1px solid #3f4147;"></div>`;
+        }
+        html += `<div style="font-size: 0.8em; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Avslutade anordningar</div>`;
+        finishedWorks.forEach(work => { html += buildCard(work); });
+    }
+
     html += `</div>`;
     container.innerHTML = html;
 }
