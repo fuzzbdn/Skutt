@@ -1514,7 +1514,125 @@ async function saveMtoWork(status) {
 if(document.getElementById('planWorkBtn')) document.getElementById('planWorkBtn').onclick = () => saveMtoWork('Planerad');
 if(document.getElementById('startWorkBtn')) document.getElementById('startWorkBtn').onclick = () => saveMtoWork('Startad');
 if(document.getElementById('finishWorkBtn')) document.getElementById('finishWorkBtn').onclick = () => saveMtoWork('Avslutad');
+// ==========================================
+// XML IMPORT OCH PARSNING (GRAF-VYN)
+// ==========================================
+const importXmlBtn = document.getElementById('importXmlBtn');
+const xmlFileInput = document.getElementById('xmlFileInput');
+if(importXmlBtn) {
+    importXmlBtn.addEventListener('click', () => xmlFileInput.click());
+    xmlFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader(); 
+        reader.onload = (event) => { 
+            parseXMLTimetable(event.target.result); 
+            xmlFileInput.value = ''; 
+        }; 
+        reader.readAsText(file);
+    });
+}
 
+async function parseXMLTimetable(xmlString) {
+    try {
+        const parser = new DOMParser(); 
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+        const trainNodes = xmlDoc.getElementsByTagName("Train");
+        
+        let isReplace = false;
+        
+        if (trains.length > 0) {
+            isReplace = confirm("Grafen innehåller redan tåg.\n\nKlicka OK för att ERSÄTTA dem.\nKlicka Avbryt för att LÄGGA TILL utöver de gamla.");
+            if (isReplace) {
+                trains = []; // Töm den lokala listan
+            }
+        }
+
+        let importedCount = 0;
+
+        for (let i = 0; i < trainNodes.length; i++) {
+            const tNode = trainNodes[i];
+            const tId = tNode.getAttribute("id");
+            const startDateAttr = tNode.getAttribute("startDate"); 
+            const stopNodes = tNode.getElementsByTagName("Stop");
+            
+            let newTimetable = [];
+            
+            for (let j = 0; j < stopNodes.length; j++) {
+                const sNode = stopNodes[j];
+                const sign = sNode.getAttribute("sign");
+                
+                const stIdx = stations.findIndex(s => s.sign === sign);
+                
+                if (stIdx !== -1) {
+                    let arrStr = sNode.getAttribute("arrival") || "";
+                    let depStr = sNode.getAttribute("departure") || "";
+                    
+                    if (arrStr.trim() !== "" || depStr.trim() !== "") {
+                        newTimetable.push({ 
+                            stationSign: sign, 
+                            arrival: arrStr, 
+                            departure: depStr 
+                        });
+                    }
+                }
+            }
+            
+            // Om tåget har minst två stopp i VÅR graf lägger vi till det
+            if (newTimetable.length >= 2) {
+                let currentDayOffset = 0;
+                let prevMinsRaw = -1;
+                let convertedTimetable = [];
+                let today = new Date();
+                today.setHours(0,0,0,0);
+                
+                if (startDateAttr) {
+                    let sDate = new Date(startDateAttr);
+                    sDate.setHours(0,0,0,0);
+                    if (!isNaN(sDate)) currentDayOffset = Math.round((sDate - today) / 86400000);
+                }
+
+                newTimetable.forEach(stop => {
+                    let stIdx = stations.findIndex(s => s.sign === stop.stationSign);
+                    let arrMins = null, depMins = null;
+                    
+                    if (stop.arrival) {
+                        const [h, m] = stop.arrival.split(':').map(Number);
+                        let minsRaw = h * 60 + m;
+                        if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) currentDayOffset++;
+                        prevMinsRaw = minsRaw;
+                        arrMins = minsRaw + (currentDayOffset * 24 * 60);
+                    }
+                    if (stop.departure) {
+                        const [h, m] = stop.departure.split(':').map(Number);
+                        let minsRaw = h * 60 + m;
+                        if (prevMinsRaw !== -1 && minsRaw < prevMinsRaw - 12 * 60) currentDayOffset++;
+                        prevMinsRaw = minsRaw;
+                        depMins = minsRaw + (currentDayOffset * 24 * 60);
+                    }
+                    
+                    convertedTimetable.push({ 
+                        station: stIdx, 
+                        arrival: arrMins !== null ? arrMins : depMins, 
+                        departure: depMins !== null ? depMins : arrMins 
+                    });
+                });
+                
+                convertedTimetable.sort((a, b) => a.arrival - b.arrival);
+                trains.push({ id: tId, startDate: startDateAttr, timetable: convertedTimetable });
+                importedCount++;
+            }
+        }
+        
+        // NYTT: Spara alla tåg till Neondatabasen via vårt API!
+        await saveTrainsToDatabase();
+        needsRedraw = true;
+        
+        alert(`Klart! ${importedCount} tåg hittades för sträckan och har sparats i databasen.`);
+    } catch (err) {
+        alert("Kunde inte läsa XML-filen. Kontrollera formatet."); 
+        console.error(err);
+    }
+}
 // ==========================================
 // UPSTART AV SIDAN
 // ==========================================
