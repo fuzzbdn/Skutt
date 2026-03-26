@@ -144,19 +144,28 @@ window.deleteStation = function(index) {
 
 // --- Spara till webbläsaren OCH databasen ---
 async function saveData() {
-    // 1. Spara lokalt som vanligt för att sidan ska ladda snabbt
     localStorage.setItem('mto_graphs', JSON.stringify(graphs));
     
-    // 2. Skicka grafen till vår Neon-databas!
     const activeGraph = graphs.find(g => g.id === activeGraphId);
     if (!activeGraph) return;
+
+    // Hämta biljetten vi sparade vid inloggning
+    const token = localStorage.getItem('skutt_token');
+    if (!token) {
+        alert("Du är inte inloggad!");
+        return;
+    }
 
     try {
         await fetch('/api/graphs', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // HÄR ÄR BILJETTEN!
+            },
             body: JSON.stringify(activeGraph)
         });
+        alert("Grafen sparades i molnet för din användare!");
     } catch (error) {
         console.error("Kunde inte spara grafen till databasen", error);
     }
