@@ -103,8 +103,22 @@ function selectTrain(idx) {
 
 function renderTimetable(timetable) {
     timetableBody.innerHTML = '';
+    
+    // Hjälpfunktion: gör om minuter (ex 720) till text (ex "12:00") för HTML-rutorna
+    const formatToText = (val) => {
+        if (typeof val === 'string' && val.includes(':')) return val; 
+        if (isNaN(val)) return '';
+        let m = Math.floor(((val % 60) + 60) % 60);
+        let h = Math.floor(val / 60);
+        return `${(((h % 24) + 24) % 24).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
     timetable.forEach((stop) => {
-        timetableBody.appendChild(createRow(stop.stationSign, stop.arrival, stop.departure));
+        timetableBody.appendChild(createRow(
+            stop.stationSign, 
+            formatToText(stop.arrival), 
+            formatToText(stop.departure)
+        ));
     });
 }
 
