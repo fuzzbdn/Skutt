@@ -1,17 +1,28 @@
 import { state } from './state.js';
-import { setupAuth, createLogoutButton } from './auth.js';
+import { createLogoutButton } from './auth.js';
 import { loadTrainsFromDatabase, loadWorksFromDatabase } from './api.js';
 import { setupUI } from './ui.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Vi skickar in funktionen initApp som en "callback"
-    setupAuth(initApp);
+    // 1. Säkerhetskontroll: Har vi en giltig biljett?
+    const token = localStorage.getItem('skutt_token');
+    if (!token) {
+        // Kastas ut till inloggningssidan!
+        window.location.href = 'index.html';
+        return;
+    }
+    
+    // Fyll på state så resten av appen fungerar
+    state.token = token;
+    state.currentUser = localStorage.getItem('skutt_user');
+    
+    // Starta graf-appen
+    initApp();
 });
 
 export async function initApp() {
     createLogoutButton();
     
-    // Hämta grafer från databasen
     try {
         const res = await fetch('/api/graphs', { 
             headers: { 'Authorization': `Bearer ${state.token}` } 
@@ -27,22 +38,18 @@ export async function initApp() {
         state.savedGraphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
     }
 
-    // Setup väljare för graf
     const sel = document.getElementById('activeGraphSelect');
     if (sel && state.savedGraphs.length > 0) {
         sel.innerHTML = '';
         state.savedGraphs.forEach(g => sel.appendChild(new Option(g.name, g.id)));
         
-        // När användaren byter graf i rullgardinslistan
         sel.addEventListener('change', async (e) => {
             await loadGraphData(e.target.value);
         });
         
-        // Ladda den första grafen vid start
         await loadGraphData(state.savedGraphs[0].id);
     }
 
-    // Starta canvas-klick och rit-loopen
     setupUI();
 }
 
@@ -50,16 +57,12 @@ async function loadGraphData(graphId) {
     state.activeGraphId = graphId;
     const graph = state.savedGraphs.find(g => g.id === graphId);
     
-    // Hämta och sortera stationerna säkert
     if (graph && graph.stations) {
         state.stations = [...graph.stations].sort((a, b) => a.km - b.km);
     } else {
         state.stations = [];
     }
     
-    // 🚨 MYCKET VIKTIGT: Nollställ alla gamla val från förra grafen!
-    // Annars kraschar renderingsloopen (och menyn) när den försöker 
-    // visa ett tåg eller arbete som fanns i förra grafen men inte i den nya.
     state.selectedTrainIndex = null;
     state.activeNode = null;
     state.expandedWorkId = null;
@@ -67,17 +70,14 @@ async function loadGraphData(graphId) {
     state.draggingConflict = null;
     state.draggingNode = null;
 
-    // Töm grafens data temporärt medan vi hämtar nytt (rensar canvasen)
     state.trains = [];
     state.trackWorks = [];
     state.conflicts = [];
     state.conflictSegments = new Set();
     
-    // Ladda in de nya tågen och banarbetena från servern
     await loadTrainsFromDatabase();
     await loadWorksFromDatabase();
     
-    // Säg åt canvasen och sidomenyn att rita upp allt på nytt för den nya grafen!
     state.needsRedraw = true;
     state.needsSidebarUpdate = true;
 }
