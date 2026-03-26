@@ -1,17 +1,36 @@
-// --- Datahantering via LocalStorage ---
-// Hämta befintliga grafer eller skapa en tom array
-let graphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
+// --- Datahantering ---
+let graphs = [];
 let activeGraphId = null;
 
-// Referenser till DOM-element
 const graphList = document.getElementById('graphList');
 const emptyState = document.getElementById('emptyState');
 const graphEditor = document.getElementById('graphEditor');
 const graphNameInput = document.getElementById('graphNameInput');
 const stationTableBody = document.getElementById('stationTableBody');
 
+// Hämta token
+const token = localStorage.getItem('skutt_token');
+if (!token) {
+    alert("Du är inte inloggad. Omdirigerar...");
+    window.location.href = 'index.html';
+}
+
 // --- Initiering ---
-function init() {
+async function init() {
+    // Hämta grafer från databasen istället för bara localStorage
+    try {
+        const res = await fetch('/api/graphs', { 
+            headers: { 'Authorization': `Bearer ${token}` } 
+        });
+        if (res.ok) {
+            graphs = await res.json();
+            localStorage.setItem('mto_graphs', JSON.stringify(graphs)); // Backup
+        } else {
+            graphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
+        }
+    } catch(e) {
+        graphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
+    }
     renderGraphList();
 }
 
@@ -37,7 +56,7 @@ function selectGraph(id) {
         graphEditor.style.display = 'flex';
         graphNameInput.value = graph.name;
         renderStations();
-        renderGraphList(); // Uppdatera aktiv CSS-klass
+        renderGraphList(); 
     }
 }
 
@@ -46,13 +65,10 @@ function renderStations() {
     const graph = graphs.find(g => g.id === activeGraphId);
     
     if (!graph.stations) graph.stations = [];
-
-    // Sortera driftplatser på Km-tal
     graph.stations.sort((a, b) => a.km - b.km);
 
     graph.stations.forEach((station, index) => {
         const tr = document.createElement('tr');
-        
         tr.innerHTML = `
             <td><input type="text" value="${station.name}" onchange="updateStation(${index}, 'name', this.value)"></td>
             <td><input type="text" value="${station.sign}" onchange="updateStation(${index}, 'sign', this.value)"></td>
@@ -66,7 +82,7 @@ function renderStations() {
 // --- Interaktioner ---
 document.getElementById('createNewGraphBtn').addEventListener('click', () => {
     const newGraph = {
-        id: Date.now().toString(), // Unikt ID baserat på tid
+        id: Date.now().toString(), 
         name: "Ny Graf",
         stations: []
     };
@@ -82,7 +98,6 @@ document.getElementById('saveGraphBtn').addEventListener('click', () => {
     saveData();
     renderGraphList();
     
-    // Visuell feedback
     const btn = document.getElementById('saveGraphBtn');
     const originalText = btn.textContent;
     btn.textContent = "✅ Sparad!";
@@ -93,18 +108,13 @@ document.getElementById('saveGraphBtn').addEventListener('click', () => {
     }, 1500);
 });
 
-// Lägg till ny driftplats från botten-raden
 document.getElementById('addStationBtn').addEventListener('click', () => {
     if (!activeGraphId) return;
-    
     const nameInput = document.getElementById('newStationName');
     const signInput = document.getElementById('newStationSign');
     const kmInput = document.getElementById('newStationKm');
     
-    if (!nameInput.value || !signInput.value) {
-        alert("Ange åtminstone namn och beteckning.");
-        return;
-    }
+    if (!nameInput.value || !signInput.value) return alert("Ange åtminstone namn och beteckning.");
 
     const graph = graphs.find(g => g.id === activeGraphId);
     graph.stations.push({
@@ -113,23 +123,14 @@ document.getElementById('addStationBtn').addEventListener('click', () => {
         km: parseFloat(kmInput.value) || 0
     });
     
-    // Rensa inmatningsfälten
-    nameInput.value = '';
-    signInput.value = '';
-    kmInput.value = '';
-    
+    nameInput.value = ''; signInput.value = ''; kmInput.value = '';
     saveData();
     renderStations();
 });
 
-// --- Uppdatera / Ta bort driftplatser ---
 window.updateStation = function(index, field, value) {
     const graph = graphs.find(g => g.id === activeGraphId);
-    if (field === 'km') {
-        graph.stations[index][field] = parseFloat(value) || 0;
-    } else {
-        graph.stations[index][field] = value;
-    }
+    graph.stations[index][field] = field === 'km' ? (parseFloat(value) || 0) : value;
     saveData();
 };
 
@@ -142,161 +143,82 @@ window.deleteStation = function(index) {
     }
 };
 
-// --- Spara till webbläsaren OCH databasen ---
 async function saveData() {
     localStorage.setItem('mto_graphs', JSON.stringify(graphs));
-    
     const activeGraph = graphs.find(g => g.id === activeGraphId);
     if (!activeGraph) return;
-
-    // Hämta biljetten vi sparade vid inloggning
-    const token = localStorage.getItem('skutt_token');
-    if (!token) {
-        alert("Du är inte inloggad!");
-        return;
-    }
 
     try {
         await fetch('/api/graphs', {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` // HÄR ÄR BILJETTEN!
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(activeGraph)
         });
-        alert("Grafen sparades i molnet för din användare!");
-    } catch (error) {
-        console.error("Kunde inte spara grafen till databasen", error);
-    }
+    } catch (error) { console.error("Kunde inte spara grafen", error); }
 }
 
-// ==========================================
-// --- XML Export & Import (Alla grafer) ---
-// ==========================================
-
+// XML Import/Export-funktionerna (kan ligga kvar orörda här för att bygga mallar)
 function escapeXML(str) {
     if (str === null || str === undefined) return '';
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-// 1. Exportera
 document.getElementById('exportAllXmlBtn').addEventListener('click', () => {
-    if (!graphs || graphs.length === 0) {
-        alert("Det finns inga grafer att exportera.");
-        return;
-    }
-
+    if (!graphs || graphs.length === 0) return alert("Inga grafer att exportera.");
     let xmlString = `<?xml version="1.0" encoding="UTF-8"?>\n<Graphs>\n`;
-
     graphs.forEach(graph => {
-        xmlString += `    <Graph>\n`;
-        xmlString += `        <Id>${escapeXML(graph.id)}</Id>\n`;
-        xmlString += `        <Name>${escapeXML(graph.name)}</Name>\n`;
-        xmlString += `        <Stations>\n`;
-
+        xmlString += `    <Graph>\n        <Id>${escapeXML(graph.id)}</Id>\n        <Name>${escapeXML(graph.name)}</Name>\n        <Stations>\n`;
         const sortedStations = [...(graph.stations || [])].sort((a, b) => a.km - b.km);
         sortedStations.forEach(station => {
-            xmlString += `            <Station>\n`;
-            xmlString += `                <Name>${escapeXML(station.name)}</Name>\n`;
-            xmlString += `                <Sign>${escapeXML(station.sign)}</Sign>\n`;
-            xmlString += `                <Km>${station.km}</Km>\n`;
-            xmlString += `            </Station>\n`;
+            xmlString += `            <Station>\n                <Name>${escapeXML(station.name)}</Name>\n                <Sign>${escapeXML(station.sign)}</Sign>\n                <Km>${station.km}</Km>\n            </Station>\n`;
         });
-
-        xmlString += `        </Stations>\n`;
-        xmlString += `    </Graph>\n`;
+        xmlString += `        </Stations>\n    </Graph>\n`;
     });
-
     xmlString += `</Graphs>`;
-
     const blob = new Blob([xmlString], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    
-    // Generera ett filnamn med dagens datum
-    const dateStr = new Date().toISOString().split('T')[0];
-    a.download = `grafer_export_${dateStr}.xml`;
-    
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `grafer_export_${new Date().toISOString().split('T')[0]}.xml`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 });
 
-// 2. Importera
-document.getElementById('importXmlBtn').addEventListener('click', () => {
-    document.getElementById('importXmlInput').click();
-});
+document.getElementById('importXmlBtn').addEventListener('click', () => document.getElementById('importXmlInput').click());
 
 document.getElementById('importXmlInput').addEventListener('change', (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (e) => {
-        const xmlText = e.target.result;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-
-        if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-            alert("Fel vid inläsning. Kontrollera att det är en giltig XML-fil.");
-            return;
-        }
-
+        const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
+        if (xmlDoc.getElementsByTagName("parsererror").length > 0) return alert("Fel vid inläsning.");
         const importedGraphs = [];
         const graphNodes = xmlDoc.getElementsByTagName("Graph");
 
         for (let i = 0; i < graphNodes.length; i++) {
             const node = graphNodes[i];
-            const idNode = node.getElementsByTagName("Id")[0];
-            const nameNode = node.getElementsByTagName("Name")[0];
-            const stationNodes = node.getElementsByTagName("Station");
-
             const newGraph = {
-                id: idNode ? idNode.textContent : Date.now().toString() + i,
-                name: nameNode ? nameNode.textContent : "Namnlös graf",
-                stations: []
+                id: node.getElementsByTagName("Id")[0]?.textContent || Date.now().toString() + i,
+                name: node.getElementsByTagName("Name")[0]?.textContent || "Namnlös",
+                stations: Array.from(node.getElementsByTagName("Station")).map(st => ({
+                    name: st.getElementsByTagName("Name")[0]?.textContent || "",
+                    sign: st.getElementsByTagName("Sign")[0]?.textContent || "",
+                    km: parseFloat(st.getElementsByTagName("Km")[0]?.textContent) || 0
+                }))
             };
-
-            for (let j = 0; j < stationNodes.length; j++) {
-                const stNode = stationNodes[j];
-                const stName = stNode.getElementsByTagName("Name")[0];
-                const stSign = stNode.getElementsByTagName("Sign")[0];
-                const stKm = stNode.getElementsByTagName("Km")[0];
-
-                newGraph.stations.push({
-                    name: stName ? stName.textContent : "",
-                    sign: stSign ? stSign.textContent : "",
-                    km: stKm ? parseFloat(stKm.textContent) : 0
-                });
-            }
             importedGraphs.push(newGraph);
         }
 
         if (importedGraphs.length > 0) {
-            if (confirm(`Hittade ${importedGraphs.length} grafer i filen.\n\nKlicka OK för att LÄGGA TILL dem i din nuvarande lista.\nKlicka Avbryt för att SKRIVA ÖVER dina nuvarande grafer.`)) {
+            if (confirm(`Hittade ${importedGraphs.length} grafer. Klicka OK för att LÄGGA TILL, Avbryt för att ERSÄTTA.`)) {
                 graphs = graphs.concat(importedGraphs);
             } else {
-                graphs = importedGraphs;
-                activeGraphId = null;
-                graphEditor.style.display = 'none';
-                emptyState.style.display = 'block';
+                graphs = importedGraphs; activeGraphId = null; graphEditor.style.display = 'none'; emptyState.style.display = 'block';
             }
-
-            saveData();
-            renderGraphList();
-            alert("Graferna har importerats framgångsrikt!");
-        } else {
-            alert("Hittade inga grafer i XML-filen.");
+            saveData(); renderGraphList(); alert("Graferna importerades!");
         }
-        
         event.target.value = '';
     };
-    
     reader.readAsText(file);
 });
 
-// Starta
 init();
