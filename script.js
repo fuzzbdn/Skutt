@@ -1656,13 +1656,30 @@ async function handleAuth(action) {
 }
 
 // 3. Denna funktion startar appen (ritar grafen) först när vi är inloggade
-function initApp() {
+async function initApp() {
+    // 1. Hämta just DINA grafer från databasen
+    try {
+        const res = await fetch('/api/graphs', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (res.ok) {
+            const dbGraphs = await res.json();
+            if (dbGraphs.length > 0) {
+                savedGraphs = dbGraphs; // Skriv över de lokala graferna med databasens!
+                localStorage.setItem('mto_graphs', JSON.stringify(savedGraphs));
+            }
+        }
+    } catch (e) {
+        console.error("Kunde inte hämta grafer från molnet", e);
+    }
+
+    // 2. Starta appen som vanligt
     if(document.getElementById('activeGraphSelect')) {
         loadGraphSelector();
         setTimeout(resizeCanvas, 50);
         requestAnimationFrame(renderLoop);
         
-        // Valfritt: Lägg till en liten utloggningsknapp uppe i hörnet
         const logoutBtn = document.createElement('button');
         logoutBtn.textContent = `Logga ut (${currentUser})`;
         logoutBtn.className = 'sidebar-btn';
