@@ -203,7 +203,21 @@
             </div>
         </div>
     </div>
-
+<div id="authOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#1a1b1e; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff;">
+        <h1 style="color:#33ccff; margin-bottom: 5px; font-size: 48px;">S K U T T</h1>
+        <p style="color: #888888; margin-bottom: 30px;">Trafikplanering och visualisering</p>
+        
+        <div style="background:#25262b; padding:30px; border-radius:8px; width:300px; text-align:center; border: 1px solid #3f4147; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h3 style="margin-top:0; color:#e4e5e7;">Logga in</h3>
+            <input type="text" id="authUsername" placeholder="Användarnamn" style="width:100%; padding:10px; margin-bottom:10px; background:#1a1b1e; border:1px solid #3f4147; color:#fff; border-radius:4px; box-sizing:border-box; outline:none;">
+            <input type="password" id="authPassword" placeholder="Lösenord" style="width:100%; padding:10px; margin-bottom:15px; background:#1a1b1e; border:1px solid #3f4147; color:#fff; border-radius:4px; box-sizing:border-box; outline:none;">
+            
+            <button id="loginBtn" class="sidebar-btn full-width" style="border-color:#33ccff; color:#33ccff; margin-bottom:10px; font-size:14px; padding:10px;">Logga in</button>
+            <button id="registerBtn" class="sidebar-btn full-width" style="border-color:#eed57e; color:#eed57e; font-size:14px; padding:10px;">Skapa nytt konto</button>
+            
+            <div id="authMessage" style="color:#ff6b6b; margin-top:15px; font-size:13px; height:15px; font-weight:500;"></div>
+        </div>
+    </div>
     <script src="script.js"></script>
 </body>
 </html>
