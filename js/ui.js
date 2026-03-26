@@ -1,18 +1,7 @@
 import { state, getAbsoluteMinutes } from './state.js';
-import { getY, getTimeFromY, getX, margin } from './math.js';
+import { getY, getTimeFromY, getX, margin, getStationFromX } from './math.js';
 import { canvas, drawGraph, getNodeX } from './canvas.js';
 import { saveTrainsToDatabase, debouncedSave } from './api.js';
-
-// --- Nödvändiga matte-funktioner för musen ---
-function getStationFromX(x) {
-    if (state.stations.length === 0) return 0;
-    let closestIndex = 0, minDistance = Infinity;
-    for (let i = 0; i < state.stations.length; i++) {
-        const dist = Math.abs(getX(i, canvas.width) - x);
-        if (dist < minDistance) { minDistance = dist; closestIndex = i; }
-    }
-    return closestIndex;
-}
 
 function getClosestBound(x, isLeftBound) {
     let minDiff = Infinity;
@@ -71,6 +60,67 @@ function getHoveredNode(mx, my) {
     return bestNode;
 }
 
+// ÅTERSTÄLLD: Skapar det nya mötet i tidtabellen
+export function resolveConflict(conflict, stIdx) {
+    const ensureNode = (trainIdx) => {
+        let train = state.trains[trainIdx];
+        let nodeIdx = train.timetable.findIndex(n => n.station === stIdx);
+        if (nodeIdx !== -1) {
+            return { node: train.timetable[nodeIdx], index: nodeIdx };
+        }
+        
+        const targetKm = state.stations[stIdx].km;
+        for (let i = 0; i < train.timetable.length - 1; i++) {
+            let km1 = state.stations[train.timetable[i].station].km;
+            let km2 = state.stations[train.timetable[i+1].station].km;
+            if ((targetKm > Math.min(km1, km2)) && (targetKm < Math.max(km1, km2))) {
+                let ratio = Math.abs(targetKm - km1) / Math.abs(km2 - km1);
+                let time = train.timetable[i].departure + (train.timetable[i+1].arrival - train.timetable[i].departure) * ratio;
+                let snapped = Math.round(time);
+                let newNode = { station: stIdx, arrival: snapped, departure: snapped };
+                train.timetable.splice(i + 1, 0, newNode);
+                return { node: newNode, index: i + 1 };
+            }
+        }
+        return null;
+    };
+
+    let t1Info = ensureNode(conflict.t1);
+    let t2Info = ensureNode(conflict.t2);
+
+    if (!t1Info || !t2Info) return alert("Möte kan inte planeras här. Stationen ligger utanför ett av tågens rutt.");
+
+    let t1Node = t1Info.node;
+    let t2Node = t2Info.node;
+
+    let yieldTrainIdx, yieldNode, prioNode, yieldTrObj;
+
+    if (t1Node.arrival <= t2Node.arrival) {
+        yieldTrainIdx = conflict.t1; yieldNode = t1Node; prioNode = t2Node; yieldTrObj = state.trains[conflict.t1];
+    } else {
+        yieldTrainIdx = conflict.t2; yieldNode = t2Node; prioNode = t1Node; yieldTrObj = state.trains[conflict.t2];
+    }
+
+    let newDeparture = Math.max(yieldNode.departure, Math.ceil(prioNode.departure));
+    let diff = newDeparture - yieldNode.departure;
+    
+    if (diff > 0) {
+        yieldNode.departure = newDeparture;
+        let yIndex = yieldTrObj.timetable.indexOf(yieldNode);
+        for (let k = yIndex + 1; k < yieldTrObj.timetable.length; k++) {
+            yieldTrObj.timetable[k].arrival += diff;
+            yieldTrObj.timetable[k].departure += diff;
+        }
+    }
+
+    state.selectedTrainIndex = yieldTrainIdx;
+    state.activeNode = { trainIndex: yieldTrainIdx, nodeIndex: yieldTrObj.timetable.indexOf(yieldNode), type: 'departure' };
+    
+    saveTrainsToDatabase();
+    state.needsRedraw = true;
+}
+
+
 export function setupUI() {
     const scrollContainer = document.getElementById('scrollContainer');
     const scrollContent = document.getElementById('scrollContent');
@@ -85,7 +135,6 @@ export function setupUI() {
         state.needsRedraw = true;
     }
 
-    // Scroll med rullist
     scrollContainer?.addEventListener('scroll', () => {
         if (!state.isTrackingNow && !state.isDraggingNowLine) {
             const maxScroll = scrollContent.clientHeight - scrollContainer.clientHeight;
@@ -108,7 +157,7 @@ export function setupUI() {
         state.isTrackingNow = tempTracking;
     }
 
-    // --- MUSHÄNDELSER (Dra arbeten och scrolla med mushjul) ---
+    // --- MUSHÄNDELSER ---
     canvas.addEventListener('mousedown', (e) => {
         if(state.stations.length === 0) return;
         const rect = canvas.getBoundingClientRect();
@@ -118,13 +167,21 @@ export function setupUI() {
             state.isDraggingNowLine = true; state.isTrackingNow = true; canvas.style.cursor = 'ns-resize'; return; 
         }
 
+        // ÅTERSTÄLLD: Klickar vi på en konflikt-ring?
+        let hitConflict = state.conflicts.find(c => Math.hypot(state.startPos.x - c.x, state.startPos.y - c.y) < 12);
+        if (hitConflict) { 
+            state.draggingConflict = hitConflict; 
+            canvas.style.cursor = 'move'; 
+            return; 
+        }
+
         const hNode = getHoveredNode(state.startPos.x, state.startPos.y);
         if (hNode) { state.draggingNode = hNode; state.activeNode = hNode; canvas.style.cursor = 'ns-resize'; state.needsRedraw = true; return; }
         
         const hitTrain = getHitTrainIndex(state.startPos.x, state.startPos.y);
         if (hitTrain !== null) {
             state.selectedTrainIndex = hitTrain; state.activeNode = null; state.expandedWorkId = null;
-            const stIdx = getStationFromX(state.startPos.x);
+            const stIdx = getStationFromX(state.startPos.x, canvas.width);
             if (Math.abs(state.startPos.x - getX(stIdx, canvas.width)) < 15) {
                 const tr = state.trains[hitTrain];
                 if (!tr.timetable.find(n => n.station === stIdx)) {
@@ -157,6 +214,13 @@ export function setupUI() {
             updateScrollFromTime(); state.needsRedraw = true; return;
         }
         
+        // ÅTERSTÄLLD: Drar vi ett tågmöte?
+        if (state.draggingConflict) { 
+            canvas.style.cursor = 'move'; 
+            state.needsRedraw = true; 
+            return; 
+        }
+
         if (state.draggingNode) {
             const tr = state.trains[state.draggingNode.trainIndex], node = tr.timetable[state.draggingNode.nodeIndex];
             let newTime = Math.round(getTimeFromY(state.currentMouseY, canvas.height));
@@ -182,6 +246,12 @@ export function setupUI() {
         if(state.stations.length === 0) return;
         if (state.isDraggingNowLine) { state.isDraggingNowLine = false; canvas.style.cursor = 'default'; return; }
         
+        // ÅTERSTÄLLD: Släpper vi ett tågmöte på en station?
+        if (state.draggingConflict) {
+            resolveConflict(state.draggingConflict, getStationFromX(state.currentMouseX, canvas.width));
+            state.draggingConflict = null; canvas.style.cursor = 'default'; state.needsRedraw = true; return;
+        }
+
         if (state.draggingNode) {
             state.trains[state.draggingNode.trainIndex].timetable.sort((a, b) => a.arrival - b.arrival); 
             state.draggingNode = null; canvas.style.cursor = 'default'; saveTrainsToDatabase(); state.needsRedraw = true; return;
@@ -190,7 +260,6 @@ export function setupUI() {
         if (!state.isSelecting) return;
         state.isSelecting = false;
         
-        // Öppna arbetsmodalen när man dragit en ruta
         if (Math.abs(state.currentMouseX - state.startPos.x) > 10 || Math.abs(state.currentMouseY - state.startPos.y) > 10) {
             let minX = Math.min(state.startPos.x, state.currentMouseX);
             let maxX = Math.max(state.startPos.x, state.currentMouseX);
@@ -225,7 +294,6 @@ export function setupUI() {
         state.needsRedraw = true;
     });
 
-    // Scrolla med mushjul
     canvas.addEventListener('wheel', (e) => {
         const timeDelta = e.deltaY < 0 ? 2 : -2; 
         if (state.activeNode) {
@@ -256,7 +324,6 @@ export function setupUI() {
         state.needsRedraw = true;
     });
 
-    // Starta ritslingan
     setInterval(() => {
         state.currentRealMinutes = getAbsoluteMinutes();
         if (state.isTrackingNow) {
