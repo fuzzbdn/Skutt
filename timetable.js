@@ -2,9 +2,14 @@ let savedGraphs = JSON.parse(localStorage.getItem('mto_graphs')) || [];
 let activeGraphId = null;
 let stations = [];
 
-let allTrains = JSON.parse(localStorage.getItem('mto_xml_trains')) || {};
 let currentTrains = [];
 let activeTrainIndex = null;
+
+const token = localStorage.getItem('skutt_token');
+if (!token) {
+    alert("Du är inte inloggad. Omdirigerar...");
+    window.location.href = 'index.html';
+}
 
 const activeGraphSelect = document.getElementById('activeGraphSelect');
 const trainList = document.getElementById('trainList');
@@ -14,7 +19,7 @@ const trainIdInput = document.getElementById('trainIdInput');
 const trainStartDateInput = document.getElementById('trainStartDateInput');
 const timetableBody = document.getElementById('timetableBody');
 
-function init() {
+async function init() {
     if (savedGraphs.length === 0) {
         alert("Inga grafer finns. Skapa en graf först i inställningarna.");
         window.location.href = 'admin.html';
@@ -24,16 +29,27 @@ function init() {
     savedGraphs.forEach(g => activeGraphSelect.appendChild(new Option(g.name, g.id)));
     activeGraphSelect.addEventListener('change', (e) => loadGraph(e.target.value));
     
-    loadGraph(savedGraphs[0].id);
+    await loadGraph(savedGraphs[0].id);
 }
 
-function loadGraph(graphId) {
+async function loadGraph(graphId) {
     activeGraphId = graphId;
     const graph = savedGraphs.find(g => g.id === graphId);
     stations = graph.stations ? graph.stations.sort((a,b) => a.km - b.km) : [];
     
-    if (!allTrains[graphId]) allTrains[graphId] = [];
-    currentTrains = allTrains[graphId];
+    // NYTT: Hämta tågen från Databasen istället för LocalStorage!
+    try {
+        const res = await fetch(`/api/trains?graphId=${activeGraphId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            currentTrains = await res.json();
+        } else {
+            currentTrains = [];
+        }
+    } catch(e) {
+        currentTrains = [];
+    }
     
     activeTrainIndex = null;
     renderTrainList();
@@ -43,8 +59,6 @@ function loadGraph(graphId) {
 
 function renderTrainList() {
     trainList.innerHTML = '';
-
-    // 1. Gruppera tågen baserat på deras startdatum
     const groupedTrains = {};
     currentTrains.forEach((train, idx) => {
         const date = train.startDate || "Inget datum angivet";
@@ -52,14 +66,12 @@ function renderTrainList() {
         groupedTrains[date].push({ train, idx });
     });
 
-    // 2. Sortera datumen i ordning
     const sortedDates = Object.keys(groupedTrains).sort((a, b) => {
         if (a === "Inget datum angivet") return 1;
         if (b === "Inget datum angivet") return -1;
         return a.localeCompare(b);
     });
 
-    // 3. Bygg upp listan med rubriker
     sortedDates.forEach(date => {
         const header = document.createElement('div');
         header.style.cssText = 'color: #909296; font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px; margin: 15px 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #373a40; font-weight: bold;';
@@ -96,7 +108,6 @@ function renderTimetable(timetable) {
     });
 }
 
-// Skapar den ultra-kompakta, rena rutnäts-designen
 function createRow(stationSign = '', arr = '', dep = '') {
     const tr = document.createElement('tr');
     tr.style.borderBottom = "1px solid #2a2b30";
@@ -114,10 +125,7 @@ function createRow(stationSign = '', arr = '', dep = '') {
         sel += `<option value="${st.sign}" ${isSelected ? 'selected' : ''} style="background:#25262b;">${st.name} (${st.sign})</option>`;
     });
 
-    if (stationSign && !found) {
-        sel += `<option value="${stationSign}" selected style="background:#25262b; color:#ff6b6b;">⚠ Okänd: ${stationSign}</option>`;
-    }
-
+    if (stationSign && !found) sel += `<option value="${stationSign}" selected style="background:#25262b; color:#ff6b6b;">⚠ Okänd: ${stationSign}</option>`;
     sel += `</select>`;
     
     tr.innerHTML = `
@@ -131,7 +139,7 @@ function createRow(stationSign = '', arr = '', dep = '') {
     return tr;
 }
 
-document.getElementById('createNewTrainBtn').addEventListener('click', () => {
+document.getElementById('createNewTrainBtn').addEventListener('click', async () => {
     const today = new Date();
     const dateStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,'0') + "-" + String(today.getDate()).padStart(2,'0');
     
@@ -144,18 +152,17 @@ document.getElementById('createNewTrainBtn').addEventListener('click', () => {
         ]
     };
     currentTrains.push(newTrain);
-    saveData();
+    await saveData();
     selectTrain(currentTrains.length - 1);
 });
 
 document.getElementById('addTimetableRowBtn').addEventListener('click', () => {
     timetableBody.appendChild(createRow());
-    // Scrolla ner automatiskt till den nya raden
     const container = document.querySelector('.table-container');
     container.scrollTop = container.scrollHeight;
 });
 
-document.getElementById('saveTrainBtn').addEventListener('click', () => {
+document.getElementById('saveTrainBtn').addEventListener('click', async () => {
     if (activeTrainIndex === null) return;
     
     const train = currentTrains[activeTrainIndex];
@@ -173,8 +180,8 @@ document.getElementById('saveTrainBtn').addEventListener('click', () => {
     });
     train.timetable = newTimetable;
     
-    saveData();
-    renderTrainList(); // Sorterar om ifall datumet ändrades
+    await saveData();
+    renderTrainList(); 
     
     const btn = document.getElementById('saveTrainBtn');
     const orig = btn.textContent;
@@ -182,24 +189,32 @@ document.getElementById('saveTrainBtn').addEventListener('click', () => {
     setTimeout(() => btn.textContent = orig, 1500);
 });
 
-document.getElementById('deleteTrainBtn').addEventListener('click', () => {
+document.getElementById('deleteTrainBtn').addEventListener('click', async () => {
     if (activeTrainIndex === null) return;
     if (confirm("Är du säker på att du vill ta bort detta tåg?")) {
         currentTrains.splice(activeTrainIndex, 1);
         activeTrainIndex = null;
-        saveData();
+        await saveData();
         renderTrainList();
         trainEditor.style.display = 'none';
         emptyState.style.display = 'flex';
     }
 });
 
-function saveData() {
-    allTrains[activeGraphId] = currentTrains;
-    localStorage.setItem('mto_xml_trains', JSON.stringify(allTrains));
+// NYTT: Spara till Databasen via API:et!
+async function saveData() {
+    try {
+        await fetch('/api/trains', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ graphId: activeGraphId, trains: currentTrains })
+        });
+    } catch (error) {
+        console.error("Kunde inte spara tåg till databasen", error);
+    }
 }
 
-// --- LÄS IN TRAFIKVERKET XML ---
+// --- LÄS IN TRAFIKVERKET XML TILL DATABASEN ---
 const importExternalXmlBtn = document.getElementById('importExternalXmlBtn');
 const externalXmlFileInput = document.getElementById('externalXmlFileInput');
 
@@ -211,12 +226,12 @@ externalXmlFileInput.addEventListener('change', (e) => {
     const reader = new FileReader();
     reader.onload = (event) => {
         parseTrafikverketXML(event.target.result);
-        externalXmlFileInput.value = ''; // Återställ
+        externalXmlFileInput.value = ''; 
     };
     reader.readAsText(file);
 });
 
-function parseTrafikverketXML(xmlString) {
+async function parseTrafikverketXML(xmlString) {
     try {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlString, "text/xml");
@@ -243,124 +258,61 @@ function parseTrafikverketXML(xmlString) {
                                 String(dateObj.getMonth()+1).padStart(2,'0') + '-' + 
                                 String(dateObj.getDate()).padStart(2,'0');
 
-                parsedData[trainId].push({
-                    loc: locNode.textContent,
-                    type: activityNode.textContent, 
-                    time: hhmm,
-                    timestamp: dateObj.getTime(),
-                    dateStr: dateStr 
-                });
+                parsedData[trainId].push({ loc: locNode.textContent, type: activityNode.textContent, time: hhmm, timestamp: dateObj.getTime(), dateStr: dateStr });
             }
         }
 
         let isReplace = false;
-        let hasAnyTrains = Object.values(allTrains).some(arr => arr.length > 0);
-        if (hasAnyTrains) {
-            isReplace = confirm("Databasen innehåller redan tåg.\n\nKlicka OK för att ERSÄTTA (tömmer alla grafer först).\nKlicka Avbryt för att LÄGGA TILL utöver de gamla.");
-            if (isReplace) {
-                allTrains = {};
-            }
+        if (currentTrains.length > 0) {
+            isReplace = confirm("Databasen innehåller redan tåg.\n\nKlicka OK för att ERSÄTTA.\nKlicka Avbryt för att LÄGGA TILL utöver de gamla.");
+            if (isReplace) currentTrains = [];
         }
 
-        let totalImportedToCurrent = 0;
+        let graphStations = stations;
+        let validSigns = graphStations.map(s => s.sign);
+        let graphImportedTrains = [];
 
-        // Loopa igenom ALLA sparade grafer
-        savedGraphs.forEach(graph => {
-            if (!allTrains[graph.id]) allTrains[graph.id] = [];
-            let graphStations = graph.stations || [];
-            let validSigns = graphStations.map(s => s.sign);
-            let graphImportedTrains = [];
+        for (const trainId in parsedData) {
+            let trainAnns = parsedData[trainId].filter(ann => validSigns.includes(ann.loc));
+            if (trainAnns.length < 2) continue; 
 
-            for (const trainId in parsedData) {
-                // Filtrera ut enbart de händelser som tillhör stationer i just DENNA graf
-                let trainAnns = parsedData[trainId].filter(ann => validSigns.includes(ann.loc));
-                if (trainAnns.length < 2) continue; // Tåget måste ha minst en ankomst och en avgång i grafen
+            trainAnns.sort((a, b) => a.timestamp - b.timestamp);
+            let trainStartDate = trainAnns[0].dateStr;
+            let timetable = [];
+            let currentStop = null;
 
-                trainAnns.sort((a, b) => a.timestamp - b.timestamp);
-                let trainStartDate = trainAnns[0].dateStr;
-                let timetable = [];
-                let currentStop = null;
-
-                trainAnns.forEach(ann => {
-                    if (!currentStop || currentStop.stationSign !== ann.loc) {
-                        if (currentStop) {
-                            if (!currentStop.departure) currentStop.departure = currentStop.arrival;
-                            timetable.push(currentStop);
-                        }
-                        currentStop = {
-                            stationSign: ann.loc,
-                            arrival: ann.type === "Ankomst" ? ann.time : "",
-                            departure: ann.type === "Avgang" ? ann.time : ""
-                        };
-                    } else {
-                        if (ann.type === "Ankomst") currentStop.arrival = ann.time;
-                        if (ann.type === "Avgang") currentStop.departure = ann.time;
+            trainAnns.forEach(ann => {
+                if (!currentStop || currentStop.stationSign !== ann.loc) {
+                    if (currentStop) {
+                        if (!currentStop.departure) currentStop.departure = currentStop.arrival;
+                        timetable.push(currentStop);
                     }
-                });
-
-                if (currentStop) {
-                    if (!currentStop.arrival) currentStop.arrival = currentStop.departure;
-                    if (!currentStop.departure) currentStop.departure = currentStop.arrival;
-                    timetable.push(currentStop);
+                    currentStop = { stationSign: ann.loc, arrival: ann.type === "Ankomst" ? ann.time : "", departure: ann.type === "Avgang" ? ann.time : "" };
+                } else {
+                    if (ann.type === "Ankomst") currentStop.arrival = ann.time;
+                    if (ann.type === "Avgang") currentStop.departure = ann.time;
                 }
+            });
 
-                if (timetable.length >= 2) {
-                    graphImportedTrains.push({
-                        id: trainId,
-                        startDate: trainStartDate,
-                        timetable: timetable
-                    });
-                }
+            if (currentStop) {
+                if (!currentStop.arrival) currentStop.arrival = currentStop.departure;
+                if (!currentStop.departure) currentStop.departure = currentStop.arrival;
+                timetable.push(currentStop);
             }
 
-            allTrains[graph.id] = allTrains[graph.id].concat(graphImportedTrains);
-            
-            // Håll koll på hur många som importerades till just den graf användaren tittar på
-            if (graph.id === activeGraphId) {
-                totalImportedToCurrent = graphImportedTrains.length;
-            }
-        });
+            if (timetable.length >= 2) graphImportedTrains.push({ id: trainId, startDate: trainStartDate, timetable: timetable });
+        }
 
-        // Uppdatera vyn för den aktuella grafen
-        currentTrains = allTrains[activeGraphId] || [];
-        saveData();
+        currentTrains = currentTrains.concat(graphImportedTrains);
+        await saveData();
         renderTrainList();
         
-        alert(`✅ Importeringen lyckades!\n\n${totalImportedToCurrent} tåg lades till i din aktuella vy, och övriga matchande sträckor har pytsats ut till dina andra grafer.`);
-        
+        alert(`✅ Importeringen lyckades!\n\n${graphImportedTrains.length} tåg lades till i denna graf via databasen.`);
         if(currentTrains.length > 0) selectTrain(currentTrains.length - 1); 
         
     } catch (err) {
-        alert("Kunde inte läsa XML-filen. Kontrollera formatet.");
-        console.error(err);
+        alert("Kunde inte läsa XML-filen."); console.error(err);
     }
 }
-// --- EXPORT TILL KNAS ---
-document.getElementById('exportXmlBtn').addEventListener('click', () => {
-    if (currentTrains.length === 0) {
-        alert("Det finns inga tåg att exportera.");
-        return;
-    }
-    
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<Timetable graphId="${activeGraphId}">\n`;
-    currentTrains.forEach(t => {
-        let dateAttr = t.startDate ? ` startDate="${t.startDate}"` : '';
-        xml += `  <Train id="${t.id}"${dateAttr}>\n`;
-        
-        t.timetable.forEach(stop => {
-            xml += `    <Stop sign="${stop.stationSign}" arrival="${stop.arrival}" departure="${stop.departure}" />\n`;
-        });
-        xml += `  </Train>\n`;
-    });
-    xml += `</Timetable>`;
-    
-    const blob = new Blob([xml], { type: 'text/xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `tidtabell_${activeGraphId}.xml`;
-    a.click();
-    URL.revokeObjectURL(url);
-});
 
 init();
