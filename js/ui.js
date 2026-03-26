@@ -1,7 +1,7 @@
 import { state, getAbsoluteMinutes } from './state.js';
-import { getY, getTimeFromY, getX, margin, getStationFromX } from './math.js';
+import { getY, getTimeFromY, getX, margin, getStationFromX, formatTime } from './math.js';
 import { canvas, drawGraph, getNodeX } from './canvas.js';
-import { saveTrainsToDatabase, debouncedSave, loadWorksFromDatabase } from './api.js';
+import { saveTrainsToDatabase, debouncedSave, loadWorksFromDatabase, deleteWorkFromDatabase } from './api.js';
 
 // ==========================================
 // MATTE OCH HJÄLPFUNKTIONER FÖR MUSEN
@@ -123,7 +123,7 @@ export function resolveConflict(conflict, stIdx) {
 }
 
 // ==========================================
-// FUNKTIONER FÖR ARBETSMEDALEN
+// FUNKTIONER FÖR ARBETSMEDALEN OCH SIDOMENYN
 // ==========================================
 function updateWorkAreaDisplay() {
     const startIdx = parseInt(document.getElementById('workStartStation').value);
@@ -171,7 +171,6 @@ function getBoundVal(sIdx, sInc, isLeft) {
     return isLeft ? sIdx + (sInc ? 0 : 0.5) : sIdx - (sInc ? 0 : 0.5);
 }
 
-// Den funktion som faktiskt kommunicerar med ditt API för att spara!
 async function saveMtoWork(status) {
     const workType = document.getElementById('workType').value;
     const rawLabel = document.getElementById('workLabel').value;
@@ -189,10 +188,6 @@ async function saveMtoWork(status) {
     let displayLabel = rawLabel || workType;
     if (workType === 'Efter tåg' && trainRef) displayLabel = `Efter tåg ${trainRef}: ${rawLabel}`;
 
-    const incStartVal = document.getElementById('incStart').value === 'true';
-    const incEndVal = document.getElementById('incEnd').value === 'true';
-
-    // Samla all data i exakt de format databasen förväntar sig (snake_case)
     const newWork = {
         id: state.editingWorkId || Date.now().toString(), 
         graph_id: state.activeGraphId,
@@ -203,8 +198,8 @@ async function saveMtoWork(status) {
         end_time: Math.round(endTime), 
         start_station: parseInt(document.getElementById('workStartStation').value), 
         end_station: parseInt(document.getElementById('workEndStation').value),
-        inc_start: incStartVal,
-        inc_end: incEndVal,
+        inc_start: document.getElementById('incStart').value === 'true',
+        inc_end: document.getElementById('incEnd').value === 'true',
         track: document.getElementById('workTrack').value || '',
         end_place: document.getElementById('workEndPlace').value || '',
         bounds: document.getElementById('workBounds').value || '', 
@@ -219,36 +214,138 @@ async function saveMtoWork(status) {
     try {
         const response = await fetch('/api/works', {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${state.token}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
             body: JSON.stringify(newWork)
         });
-        
         if (response.ok) {
             await loadWorksFromDatabase();
             document.getElementById('workModal').style.display = 'none'; 
             state.needsRedraw = true;
-        } else {
-            const errData = await response.json();
-            alert("Fel vid sparande: " + errData.error);
         }
-    } catch (error) {
-        console.error("Kunde inte spara:", error);
-        alert("Nätverksfel vid sparande.");
-    }
+    } catch (error) { console.error("Kunde inte spara:", error); }
 }
 
+// ÅTERSTÄLLD: Ritar ut sidomenyn
+function renderSidebar() {
+    const container = document.getElementById('workInfo'); 
+    if(!container) return;
+    
+    if (state.selectedTrainIndex !== null) {
+        const tr = state.trains[state.selectedTrainIndex];
+        container.innerHTML = `
+            <div class="work-card selected" style="border-left-color: #33ccff; margin-bottom: 15px;">
+                <div class="work-card-header"><div class="work-card-title"><span>Tåg ${tr.id}</span></div><div class="work-card-meta">Vald i grafen</div></div>
+                <div class="work-card-body">
+                    <p style="font-size:0.85em; color:#c1c2c5;">
+                        • <strong>Klicka på en ring</strong> för att låsa scrollen till den (lyser vitt) och rulla sedan på mushjulet för att justera tider.<br>
+                        • <strong>Klicka på tåglinjen</strong> vid en station för att skapa ett uppehåll.<br>
+                        • <strong>Dra en röd varningsring</strong> till en driftplats för att planera ett möte!
+                    </p>
+                    <button class="sidebar-btn full-width" style="border-color:#33ccff; color:#33ccff; margin-top:5px;" onclick="window.location.href='timetable.html'">✏️ Ändra i tabell-vy</button>
+                    <button class="sidebar-btn full-width" style="border-color:#f09170; color:#f09170; margin-top:5px;" onclick="window.deleteSelectedTrain()">🗑️ Ta bort tåg</button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (state.trackWorks.length === 0) {
+        container.innerHTML = '<p style="color:#5c5f66; font-size:0.9em;">Inga anordningar uppritade. Dra en ruta i grafen.</p>';
+        return;
+    }
+
+    let html = `<div class="work-list">`;
+    state.trackWorks.forEach(work => {
+        let color = work.status === 'Planerad' ? '#ffd700' : (work.status === 'Avslutad' ? '#666666' : '#ff4d4d'); 
+        let isExpanded = work.id === state.expandedWorkId;
+        
+        html += `
+            <div class="work-card ${isExpanded ? 'selected' : ''}" style="border-left-color: ${color}">
+                <div class="work-card-header" onclick="window.toggleWork('${work.id}')">
+                    <div class="work-card-title"><span>${work.label || 'Ny anordning'}</span> <span style="color:${color}">${work.status.charAt(0)}</span></div>
+                    <div class="work-card-meta">${work.blockedArea || '?'} | ${formatTime(work.startTime).trim()} - ${formatTime(work.endTime).trim()}</div>
+                </div>
+                ${isExpanded ? `
+                <div class="work-card-body">
+                    <div class="work-card-detail">
+                        <strong>Spår:</strong> ${work.track || '-'}<br>
+                        <strong>Växlar:</strong> ${work.switches || '-'}<br>
+                        <strong>Samråd:</strong> ${work.consultation || '-'}<br>
+                        <strong>Kontakt:</strong> ${work.contactName || '-'} ${work.contactPhone ? '(' + work.contactPhone + ')' : ''}<br>
+                        <strong>Info:</strong> ${work.detailsText || '-'}
+                    </div>
+                    <button class="sidebar-btn full-width" style="border-color:#33ccff; color:#33ccff; margin-bottom:5px;" onclick="window.editWork('${work.id}')">✏️ Redigera / Ändra tid</button>
+                    <button class="sidebar-btn full-width" style="border-color:#ff4d4d; color:#ff4d4d;" onclick="window.deleteWork('${work.id}')">🗑️ Ta bort anordning</button>
+                </div>` : ''}
+            </div>`;
+    });
+    html += `</div>`;
+    container.innerHTML = html;
+}
 
 // ==========================================
 // KNYT IHOP ALLA HÄNDELSER
 // ==========================================
 export function setupUI() {
+    // Gör knappfunktionerna från sidomenyn tillgängliga globalt
+    window.toggleWork = function(id) {
+        state.expandedWorkId = state.expandedWorkId === id ? null : id;
+        state.needsRedraw = true;
+    };
+
+    window.editWork = function(id) {
+        const work = state.trackWorks.find(w => w.id === id);
+        if(!work) return;
+        state.editingWorkId = id;
+        
+        document.getElementById('workType').value = work.type || 'A-s';
+        document.getElementById('workLabel').value = work.label || '';
+        document.getElementById('workStartStation').value = work.startStation;
+        document.getElementById('workEndStation').value = work.endStation;
+        document.getElementById('incStart').value = work.incStart;
+        document.getElementById('incEnd').value = work.incEnd;
+        
+        const setFormTime = (totalMins, timeId) => {
+            let m = Math.floor(((totalMins % 60) + 60) % 60), h = Math.floor(totalMins / 60);
+            document.getElementById(timeId).value = `${(((h % 24) + 24) % 24).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        };
+        setFormTime(work.startTime, 'workStartTime');
+        setFormTime(work.endTime, 'workEndTime');
+        
+        document.getElementById('workTrack').value = work.track || '';
+        document.getElementById('workEndPlace').value = work.endPlace || '';
+        document.getElementById('workBlockedArea').value = work.blockedArea || '';
+        document.getElementById('workSwitches').value = work.switches || '';
+        document.getElementById('workConsultation').value = work.consultation || '';
+        document.getElementById('workContactName').value = work.contactName || '';
+        document.getElementById('workContactPhone').value = work.contactPhone || '';
+        document.getElementById('workDetails').value = work.detailsText || '';
+        
+        document.getElementById('workModal').style.display = 'flex';
+    };
+
+    window.deleteWork = async function(id) {
+        if(confirm('Vill du ta bort anordningen?')) {
+            await deleteWorkFromDatabase(id);
+            await loadWorksFromDatabase();
+            state.expandedWorkId = null;
+            state.needsRedraw = true;
+        }
+    };
+
+    window.deleteSelectedTrain = function() {
+        if(confirm('Vill du radera det valda tåget?')) {
+            state.trains.splice(state.selectedTrainIndex, 1);
+            state.selectedTrainIndex = null;
+            state.activeNode = null;
+            saveTrainsToDatabase();
+            state.needsRedraw = true;
+        }
+    };
+
     const scrollContainer = document.getElementById('scrollContainer');
     const scrollContent = document.getElementById('scrollContent');
 
-    // -- KOPPLA KNAPPAR FÖR BANARBETEN --
     const planWorkBtn = document.getElementById('planWorkBtn');
     if (planWorkBtn) planWorkBtn.onclick = () => saveMtoWork('Planerad');
     
@@ -261,7 +358,6 @@ export function setupUI() {
     const cancelWorkBtn = document.getElementById('cancelWorkBtn');
     if (cancelWorkBtn) cancelWorkBtn.onclick = () => document.getElementById('workModal').style.display = 'none';
 
-    // -- KOPPLA PIL-KNAPPARNA I MODALEN --
     const btnExpandLeft = document.getElementById('btnExpandLeft');
     if (btnExpandLeft) btnExpandLeft.onclick = () => {
         let sIdx = parseInt(document.getElementById('workStartStation').value);
@@ -300,8 +396,6 @@ export function setupUI() {
         if (getBoundVal(sIdx, sInc, true) <= getBoundVal(nextEIdx, nextEInc, false)) setWorkBounds(sIdx, sInc, nextEIdx, nextEInc);
     };
 
-
-    // -- SCROLL OCH FÖNSTER --
     window.addEventListener('resize', resizeCanvas);
     function resizeCanvas() {
         if (!canvas) return;
@@ -334,8 +428,6 @@ export function setupUI() {
         state.isTrackingNow = tempTracking;
     }
 
-
-    // -- MUSHÄNDELSER PÅ GRAFEN --
     canvas.addEventListener('mousedown', (e) => {
         if(state.stations.length === 0) return;
         const rect = canvas.getBoundingClientRect();
@@ -435,7 +527,6 @@ export function setupUI() {
         if (!state.isSelecting) return;
         state.isSelecting = false;
         
-        // Öppna arbetsmodalen
         if (Math.abs(state.currentMouseX - state.startPos.x) > 10 || Math.abs(state.currentMouseY - state.startPos.y) > 10) {
             let minX = Math.min(state.startPos.x, state.currentMouseX);
             let maxX = Math.max(state.startPos.x, state.currentMouseX);
@@ -464,8 +555,7 @@ export function setupUI() {
                 if(document.getElementById(id)) document.getElementById(id).value = ""; 
             });
             
-            updateWorkAreaDisplay(); // VIKTIG: Denna saknades och skapade fel förut!
-            
+            updateWorkAreaDisplay();
             state.editingWorkId = null; 
             document.getElementById('workType').value = 'A-s';
             document.getElementById('workStatusBox').textContent = 'A';
@@ -518,6 +608,7 @@ export function setupUI() {
     function renderLoop() {
         if (state.needsRedraw) {
             drawGraph();
+            renderSidebar(); // ÅTERSTÄLLD: Bygger sidomenyn varje gång grafen ritas om!
             state.needsRedraw = false;
         }
         requestAnimationFrame(renderLoop);
