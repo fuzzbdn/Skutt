@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hantera Grafer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <div class="toolbar">
+        <h2>🛠️ Graf-konfigurator</h2>
+        <span class="info">Skapa grafer och lägg till driftplatser längs sträckan.</span>
+        <button onclick="window.location.href='index.html'" style="margin-left: auto;">⬅️ Tillbaka till Grafen</button>
+    </div>
+    
+    <div class="main-area">
+        <div class="sidebar admin-sidebar">
+            <h3>Mina Grafer</h3>
+            <div id="graphList" class="graph-list">
+                </div>
+            <button id="createNewGraphBtn" class="btn-outline" style="margin-top: 15px; width: 100%;">➕ Skapa ny graf</button>
+            
+            <div class="modal-divider" style="margin: 20px 0;"></div>
+            
+            <h3>Datahantering</h3>
+            <button id="exportAllXmlBtn" class="btn-outline" style="width: 100%; margin-bottom: 10px;">📄 Exportera alla (XML)</button>
+            <button id="importXmlBtn" class="btn-outline" style="width: 100%;">📂 Importera XML</button>
+            
+            <input type="file" id="importXmlInput" accept=".xml" style="display: none;">
+        </div>
+        
+        <div class="canvas-container admin-content" id="graphEditor" style="display: none;">
+            <div class="editor-header">
+                <div style="flex: 1;">
+                    <label>Grafens namn (t.ex. Norra Stambanan)</label>
+                    <input type="text" id="graphNameInput" class="large-input" placeholder="Namnge grafen...">
+                </div>
+                <button id="saveGraphBtn" class="save-btn" style="margin-top: 18px;">💾 Spara graf</button>
+            </div>
+
+            <div class="modal-divider"></div>
+
+            <h3>Driftplatser</h3>
+            <p class="info" style="margin-bottom: 15px;">Lägg till driftplatser i den ordning de ligger längs sträckan.</p>
+
+            <div class="table-container">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Driftplats (Namn)</th>
+                            <th>Beteckning (Sign)</th>
+                            <th>Km-tal (t.ex. 870.5)</th>
+                            <th style="width: 50px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="stationTableBody">
+                        </tbody>
+                    <tfoot>
+                        <tr>
+                            <td><input type="text" id="newStationName" placeholder="t.ex. Vännäs"></td>
+                            <td><input type="text" id="newStationSign" placeholder="t.ex. Vän"></td>
+                            <td><input type="number" step="0.1" id="newStationKm" placeholder="t.ex. 870.5"></td>
+                            <td><button id="addStationBtn" class="btn-outline">➕</button></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+        
+        <div id="emptyState" class="empty-state">
+            <p>Välj en graf i listan eller skapa en ny för att börja redigera.</p>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

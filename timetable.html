@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dagsplanering & XML-Export | SKUTT</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <div class="toolbar">
+        <h2>📅 Tidtabellsverktyg</h2>
+        <select id="activeGraphSelect" style="background-color: #25262b; color: #33ccff; border: 1px solid #373a40; padding: 6px 12px; border-radius: 4px; font-weight: bold; margin-left: 15px;"></select>\
+        <span class="info">Planera tåg för en vald sträcka och exportera till XML.</span>
+        <button onclick="window.location.href='index.html'" style="margin-left: auto;">⬅️ Tillbaka till Grafen</button>
+    </div>
+    
+    <div class="main-area">
+        <div class="sidebar admin-sidebar" style="width: 250px; display: flex; flex-direction: column;">
+            <h3>Dagens Tåg</h3>
+            <div id="trainList" class="graph-list" style="flex-grow: 1; overflow-y: auto; padding-right: 5px;">
+                </div>
+            <button id="createNewTrainBtn" class="btn-outline" style="margin-top: 15px; width: 100%; flex-shrink: 0;">➕ Lägg till nytt tåg</button>
+            <button id="importExternalXmlBtn" class="btn-outline" style="margin-top: 10px; width: 100%; flex-shrink: 0;">📥 Läs in Trafikverket XML</button>
+            <input type="file" id="externalXmlFileInput" accept=".xml" style="display: none;">
+            <button id="exportXmlBtn" style="margin-top: 10px; width: 100%; flex-shrink: 0; background-color: #25262b; border-color: #eed57e; color: #eed57e;">📤 Exportera till Grafen</button>
+        </div>
+
+        <div id="trainEditor" class="admin-content" style="display: none; padding: 20px; flex-direction: column; height: 100%; overflow: hidden;">
+            
+            <div class="editor-header" style="background: #25262b; padding: 15px; border-radius: 6px; border: 1px solid #373a40; margin-bottom: 15px; flex-wrap: wrap; flex-shrink: 0;">
+                <div style="flex: 1; min-width: 150px;">
+                    <label style="font-size: 0.75em; color: #909296; text-transform: uppercase; font-weight: bold;">Tågnummer</label>
+                    <input type="text" id="trainIdInput" class="large-input" style="padding: 8px; font-size: 1.1em;" placeholder="T.ex. 41902">
+                </div>
+                <div style="flex: 1; min-width: 150px;">
+                    <label style="font-size: 0.75em; color: #909296; text-transform: uppercase; font-weight: bold;">Startdatum</label>
+                    <input type="date" id="trainStartDateInput" class="large-input" style="padding: 8px; font-size: 1.1em; color: #ececec;">
+                </div>
+                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                    <button id="saveTrainBtn" style="border-color: #33ccff; color: #33ccff; background: transparent; padding: 10px 20px; font-weight: bold;">Spara tåg</button>
+                    <button id="deleteTrainBtn" class="btn-cancel" style="padding: 10px 20px;">Ta bort</button>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px; flex-shrink: 0;">
+                <h3 style="margin: 0;">Tidtabell</h3>
+                <span style="font-size: 0.85em; color: #909296;">Klicka i listan för att redigera tid/station</span>
+            </div>
+
+            <div class="table-container" style="flex-grow: 1; overflow-y: auto; background: #1a1b1e; border: 1px solid #373a40; border-radius: 6px; position: relative;">
+                <table class="admin-table" style="margin: 0; width: 100%; border-collapse: collapse;">
+                    <thead style="position: sticky; top: 0; background: #121316; z-index: 10; box-shadow: 0 1px 5px rgba(0,0,0,0.5);">
+                        <tr>
+                            <th style="padding: 10px; text-align: left; color: #909296; text-transform: uppercase; font-size: 0.8em;">Driftplats</th>
+                            <th style="padding: 10px; width: 120px; text-align: center; color: #909296; text-transform: uppercase; font-size: 0.8em;">Ankomst</th>
+                            <th style="padding: 10px; width: 120px; text-align: center; color: #909296; text-transform: uppercase; font-size: 0.8em;">Avgång</th>
+                            <th style="width: 40px; background: #121316;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="timetableBody">
+                        </tbody>
+                </table>
+            </div>
+            
+            <button id="addTimetableRowBtn" class="btn-outline" style="margin-top: 10px; border-style: dashed; flex-shrink: 0;">➕ Lägg till driftplats</button>
+        </div>
+        
+        <div id="emptyState" class="empty-state">
+            <p>Välj ett tåg i listan eller skapa ett nytt för att bygga tidtabell.</p>
+        </div>
+    </div>
+
+    <script src="timetable.js"></script>
+</body>
+</html>

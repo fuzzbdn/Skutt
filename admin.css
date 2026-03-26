@@ -1,0 +1,110 @@
+/* --- Specifik CSS för Admin-sidan --- */
+.admin-sidebar {
+    width: 250px;
+    flex-shrink: 0;
+}
+
+.graph-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.graph-item {
+    background-color: #25262b;
+    border: 1px solid #373a40;
+    color: #ececec;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+}
+
+.graph-item:hover {
+    border-color: #5c5f66;
+}
+
+.graph-item.active {
+    background-color: rgba(51, 204, 255, 0.1);
+    border-color: #33ccff;
+    color: #33ccff;
+}
+
+.admin-content {
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.empty-state {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #5c5f66;
+    font-size: 1.2em;
+}
+
+.editor-header {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.large-input {
+    width: 100%;
+    padding: 12px;
+    font-size: 1.2em;
+    font-weight: bold;
+    background-color: #1a1b1e;
+    border: 1px solid #373a40;
+    color: #33ccff;
+    border-radius: 4px;
+}
+
+.large-input:focus {
+    outline: none;
+    border-color: #33ccff;
+}
+
+/* Tabell för Driftplatser */
+.table-container {
+    background-color: #1a1b1e;
+    border: 1px solid #373a40;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table th {
+    text-align: left;
+    padding: 10px;
+    color: #909296;
+    font-size: 0.85em;
+    border-bottom: 1px solid #373a40;
+}
+
+.admin-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #25262b;
+}
+
+.admin-table input {
+    width: 100%;
+    padding: 8px;
+    background-color: #25262b;
+    border: 1px solid #373a40;
+    color: #ececec;
+    border-radius: 4px;
+}
+
+.admin-table input:focus {
+    outline: none;
+    border-color: #33ccff;
+}
