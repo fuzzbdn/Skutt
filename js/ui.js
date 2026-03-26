@@ -120,6 +120,7 @@ export function resolveConflict(conflict, stIdx) {
     
     saveTrainsToDatabase();
     state.needsRedraw = true;
+    state.needsSidebarUpdate = true;
 }
 
 // ==========================================
@@ -221,11 +222,14 @@ async function saveMtoWork(status) {
             await loadWorksFromDatabase();
             document.getElementById('workModal').style.display = 'none'; 
             state.needsRedraw = true;
+            state.needsSidebarUpdate = true;
+        } else {
+            const errData = await response.json();
+            alert("Fel vid sparande: " + errData.error);
         }
     } catch (error) { console.error("Kunde inte spara:", error); }
 }
 
-// ÅTERSTÄLLD: Ritar ut sidomenyn
 function renderSidebar() {
     const container = document.getElementById('workInfo'); 
     if(!container) return;
@@ -284,13 +288,14 @@ function renderSidebar() {
 }
 
 // ==========================================
-// KNYT IHOP ALLA HÄNDELSER
+// KNYT IHOP ALLA HÄNDELSER & RENDER LOOP
 // ==========================================
 export function setupUI() {
-    // Gör knappfunktionerna från sidomenyn tillgängliga globalt
+    // Exponera knappfunktioner globalt så de kan kallas via 'onclick'
     window.toggleWork = function(id) {
         state.expandedWorkId = state.expandedWorkId === id ? null : id;
         state.needsRedraw = true;
+        state.needsSidebarUpdate = true;
     };
 
     window.editWork = function(id) {
@@ -321,15 +326,17 @@ export function setupUI() {
         document.getElementById('workContactPhone').value = work.contactPhone || '';
         document.getElementById('workDetails').value = work.detailsText || '';
         
+        updateWorkAreaDisplay();
         document.getElementById('workModal').style.display = 'flex';
     };
 
     window.deleteWork = async function(id) {
         if(confirm('Vill du ta bort anordningen?')) {
             await deleteWorkFromDatabase(id);
-            await loadWorksFromDatabase();
+            await loadWorksFromDatabase(); // Laddar om och triggar sidebar update
             state.expandedWorkId = null;
             state.needsRedraw = true;
+            state.needsSidebarUpdate = true;
         }
     };
 
@@ -340,6 +347,7 @@ export function setupUI() {
             state.activeNode = null;
             saveTrainsToDatabase();
             state.needsRedraw = true;
+            state.needsSidebarUpdate = true;
         }
     };
 
@@ -356,7 +364,10 @@ export function setupUI() {
     if (finishWorkBtn) finishWorkBtn.onclick = () => saveMtoWork('Avslutad');
     
     const cancelWorkBtn = document.getElementById('cancelWorkBtn');
-    if (cancelWorkBtn) cancelWorkBtn.onclick = () => document.getElementById('workModal').style.display = 'none';
+    if (cancelWorkBtn) cancelWorkBtn.onclick = () => {
+        document.getElementById('workModal').style.display = 'none';
+        state.needsRedraw = true;
+    };
 
     const btnExpandLeft = document.getElementById('btnExpandLeft');
     if (btnExpandLeft) btnExpandLeft.onclick = () => {
@@ -428,6 +439,16 @@ export function setupUI() {
         state.isTrackingNow = tempTracking;
     }
 
+    const snapBtn = document.getElementById('snapToNowBtn');
+    if (snapBtn) {
+        snapBtn.addEventListener('click', () => {
+            state.isTrackingNow = true;
+            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
+            updateScrollFromTime();
+            state.needsRedraw = true;
+        });
+    }
+
     canvas.addEventListener('mousedown', (e) => {
         if(state.stations.length === 0) return;
         const rect = canvas.getBoundingClientRect();
@@ -449,6 +470,8 @@ export function setupUI() {
         
         const hitTrain = getHitTrainIndex(state.startPos.x, state.startPos.y);
         if (hitTrain !== null) {
+            if (state.selectedTrainIndex !== hitTrain) state.needsSidebarUpdate = true; // Menyuppdatering!
+            
             state.selectedTrainIndex = hitTrain; state.activeNode = null; state.expandedWorkId = null;
             const stIdx = getStationFromX(state.startPos.x, canvas.width);
             if (Math.abs(state.startPos.x - getX(stIdx, canvas.width)) < 15) {
@@ -464,7 +487,9 @@ export function setupUI() {
             state.needsRedraw = true; return;
         }
 
+        if (state.selectedTrainIndex !== null) state.needsSidebarUpdate = true; // Menyuppdatering!
         state.activeNode = state.selectedTrainIndex = null; 
+        
         if (state.startPos.x >= margin.left && state.startPos.x <= canvas.width - margin.right && state.startPos.y >= margin.top && state.startPos.y <= canvas.height - margin.bottom) {
             state.isSelecting = true; state.currentMouseX = state.startPos.x; state.currentMouseY = state.startPos.y;
         }
@@ -605,13 +630,16 @@ export function setupUI() {
         state.needsRedraw = true; 
     }, 1000);
 
-function renderLoop() {
+    // ==========================================
+    // DEN NYA PRESTANDA-OPTIMERADE RENDERINGSLOOPEN
+    // ==========================================
+    function renderLoop() {
         if (state.needsRedraw) {
             drawGraph();
             state.needsRedraw = false;
         }
         
-        // NYTT: Bygg bara om menyn om informationen har ändrats!
+        // Ritar bara om DOM:en när det verkligen har skett en förändring
         if (state.needsSidebarUpdate) {
             renderSidebar();
             state.needsSidebarUpdate = false;
@@ -619,3 +647,7 @@ function renderLoop() {
         
         requestAnimationFrame(renderLoop);
     }
+
+    setTimeout(resizeCanvas, 50);
+    requestAnimationFrame(renderLoop);
+}
