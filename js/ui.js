@@ -157,7 +157,7 @@ function getFormMinutes(timeId) {
     const timeEl = document.getElementById(timeId);
     if (!timeEl || !timeEl.value) return NaN;
     const parts = timeEl.value.split(':');
-    return (parseInt(parts[0]) * 60) + parseInt(parts[1]);
+    return (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
 }
 
 function setWorkBounds(sIdx, sInc, eIdx, eInc) {
@@ -234,7 +234,6 @@ function renderSidebar() {
     const container = document.getElementById('workInfo'); 
     if(!container) return;
     
-    // 1. Om ett tåg är valt, visa tåginfon
     if (state.selectedTrainIndex !== null) {
         const tr = state.trains[state.selectedTrainIndex];
         container.innerHTML = `
@@ -259,13 +258,13 @@ function renderSidebar() {
         return;
     }
 
-    // 2. Dela upp arbetena i "Aktiva" och "Avslutade"
+    // Dela upp arbetena i "Aktiva" och "Avslutade"
     const activeWorks = state.trackWorks.filter(w => w.status !== 'Avslutad');
     const finishedWorks = state.trackWorks.filter(w => w.status === 'Avslutad');
 
     let html = `<div class="work-list">`;
 
-    // En hjälpfunktion för att bygga själva HTML-kortet för varje arbete
+    // En hjälpfunktion för att bygga HTML-kortet för varje arbete
     const buildCard = (work) => {
         let color = work.status === 'Planerad' ? '#ffd700' : (work.status === 'Avslutad' ? '#666666' : '#ff4d4d'); 
         let isExpanded = work.id === state.expandedWorkId;
@@ -291,10 +290,10 @@ function renderSidebar() {
             </div>`;
     };
 
-    // 3. Rendera Planerade och Startade arbeten först
+    // Rendera Planerade och Startade arbeten först
     activeWorks.forEach(work => { html += buildCard(work); });
 
-    // 4. Rendera Avslutade arbeten längst ner (med en snygg avskiljare!)
+    // Rendera Avslutade arbeten längst ner (med avskiljare)
     if (finishedWorks.length > 0) {
         if (activeWorks.length > 0) {
             html += `<div style="margin: 15px 0 10px 0; border-bottom: 1px solid #3f4147;"></div>`;
@@ -311,7 +310,6 @@ function renderSidebar() {
 // KNYT IHOP ALLA HÄNDELSER & RENDER LOOP
 // ==========================================
 export function setupUI() {
-    // Exponera knappfunktioner globalt så de kan kallas via 'onclick'
     window.toggleWork = function(id) {
         state.expandedWorkId = state.expandedWorkId === id ? null : id;
         state.needsRedraw = true;
@@ -353,7 +351,7 @@ export function setupUI() {
     window.deleteWork = async function(id) {
         if(confirm('Vill du ta bort anordningen?')) {
             await deleteWorkFromDatabase(id);
-            await loadWorksFromDatabase(); // Laddar om och triggar sidebar update
+            await loadWorksFromDatabase(); 
             state.expandedWorkId = null;
             state.needsRedraw = true;
             state.needsSidebarUpdate = true;
@@ -372,43 +370,6 @@ export function setupUI() {
     };
 
     const scrollContainer = document.getElementById('scrollContainer');
-    // --- STÄLL TID / SIMULERING ---
-    const setSimTimeBtn = document.getElementById('setSimTimeBtn');
-    const resetSimTimeBtn = document.getElementById('resetSimTimeBtn');
-    const simulatedTimeInput = document.getElementById('simulatedTimeInput');
-
-    if (setSimTimeBtn && simulatedTimeInput) {
-        setSimTimeBtn.addEventListener('click', () => {
-            const timeVal = simulatedTimeInput.value;
-            if (!timeVal) return;
-            const parts = timeVal.split(':');
-            const simMins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-            const realMins = getAbsoluteMinutes();
-            
-            state.simulationOffsetMinutes = simMins - realMins;
-            if (resetSimTimeBtn) resetSimTimeBtn.style.display = 'inline-block';
-            
-            state.isTrackingNow = true;
-            state.currentRealMinutes = getAbsoluteMinutes() + state.simulationOffsetMinutes;
-            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
-            updateScrollFromTime();
-            state.needsRedraw = true;
-        });
-    }
-
-    if (resetSimTimeBtn) {
-        resetSimTimeBtn.addEventListener('click', () => {
-            state.simulationOffsetMinutes = 0;
-            if (simulatedTimeInput) simulatedTimeInput.value = '';
-            resetSimTimeBtn.style.display = 'none';
-            
-            state.isTrackingNow = true;
-            state.currentRealMinutes = getAbsoluteMinutes();
-            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
-            updateScrollFromTime();
-            state.needsRedraw = true;
-        });
-    }
     const scrollContent = document.getElementById('scrollContent');
 
     const planWorkBtn = document.getElementById('planWorkBtn');
@@ -506,6 +467,52 @@ export function setupUI() {
         });
     }
 
+    // --- STÄLL TID / SIMULERING (SKOTTSÄKER TIDSUTRÄKNING) ---
+    const setSimTimeBtn = document.getElementById('setSimTimeBtn');
+    const resetSimTimeBtn = document.getElementById('resetSimTimeBtn');
+    const simulatedTimeInput = document.getElementById('simulatedTimeInput');
+
+    const getSafeLocalMinutes = () => {
+        const now = new Date();
+        return (now.getHours() * 60) + now.getMinutes() + (now.getSeconds() / 60);
+    };
+
+    if (setSimTimeBtn && simulatedTimeInput) {
+        setSimTimeBtn.addEventListener('click', () => {
+            const timeVal = simulatedTimeInput.value;
+            if (!timeVal) return;
+            
+            const parts = timeVal.split(':');
+            const simMins = (parseInt(parts[0], 10) * 60) + (parts[1] ? parseInt(parts[1], 10) : 0);
+            const realMins = getSafeLocalMinutes();
+            
+            state.simulationOffsetMinutes = simMins - realMins;
+            if (resetSimTimeBtn) resetSimTimeBtn.style.display = 'inline-block';
+            
+            state.isTrackingNow = true;
+            state.currentRealMinutes = getSafeLocalMinutes() + state.simulationOffsetMinutes;
+            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
+            
+            updateScrollFromTime();
+            state.needsRedraw = true;
+        });
+    }
+
+    if (resetSimTimeBtn) {
+        resetSimTimeBtn.addEventListener('click', () => {
+            state.simulationOffsetMinutes = 0;
+            if (simulatedTimeInput) simulatedTimeInput.value = '';
+            resetSimTimeBtn.style.display = 'none';
+            
+            state.isTrackingNow = true;
+            state.currentRealMinutes = getSafeLocalMinutes();
+            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
+            
+            updateScrollFromTime();
+            state.needsRedraw = true;
+        });
+    }
+
     canvas.addEventListener('mousedown', (e) => {
         if(state.stations.length === 0) return;
         const rect = canvas.getBoundingClientRect();
@@ -527,7 +534,7 @@ export function setupUI() {
         
         const hitTrain = getHitTrainIndex(state.startPos.x, state.startPos.y);
         if (hitTrain !== null) {
-            if (state.selectedTrainIndex !== hitTrain) state.needsSidebarUpdate = true; // Menyuppdatering!
+            if (state.selectedTrainIndex !== hitTrain) state.needsSidebarUpdate = true;
             
             state.selectedTrainIndex = hitTrain; state.activeNode = null; state.expandedWorkId = null;
             const stIdx = getStationFromX(state.startPos.x, canvas.width);
@@ -544,7 +551,7 @@ export function setupUI() {
             state.needsRedraw = true; return;
         }
 
-        if (state.selectedTrainIndex !== null) state.needsSidebarUpdate = true; // Menyuppdatering!
+        if (state.selectedTrainIndex !== null) state.needsSidebarUpdate = true;
         state.activeNode = state.selectedTrainIndex = null; 
         
         if (state.startPos.x >= margin.left && state.startPos.x <= canvas.width - margin.right && state.startPos.y >= margin.top && state.startPos.y <= canvas.height - margin.bottom) {
@@ -678,9 +685,9 @@ export function setupUI() {
         state.needsRedraw = true;
     });
 
-setInterval(() => {
-        // Lägg till offseten så att klockan tickar utifrån din simulerade tid
-        state.currentRealMinutes = getAbsoluteMinutes() + state.simulationOffsetMinutes;
+    setInterval(() => {
+        const realMins = getSafeLocalMinutes();
+        state.currentRealMinutes = realMins + state.simulationOffsetMinutes;
         
         if (state.isTrackingNow) {
             state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
@@ -689,16 +696,12 @@ setInterval(() => {
         state.needsRedraw = true; 
     }, 1000);
 
-    // ==========================================
-    // DEN NYA PRESTANDA-OPTIMERADE RENDERINGSLOOPEN
-    // ==========================================
     function renderLoop() {
         if (state.needsRedraw) {
             drawGraph();
             state.needsRedraw = false;
         }
         
-        // Ritar bara om DOM:en när det verkligen har skett en förändring
         if (state.needsSidebarUpdate) {
             renderSidebar();
             state.needsSidebarUpdate = false;
