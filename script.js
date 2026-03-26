@@ -1585,10 +1585,97 @@ async function parseXMLTimetable(xmlString) {
     }
 }
 // ==========================================
-// UPSTART AV SIDAN
+// UPSTART & INLOGGNING (AUTH)
 // ==========================================
-if(document.getElementById('activeGraphSelect')) {
-    loadGraphSelector();
-    setTimeout(resizeCanvas, 50);
-    requestAnimationFrame(renderLoop);
+const authOverlay = document.getElementById('authOverlay');
+const authUsername = document.getElementById('authUsername');
+const authPassword = document.getElementById('authPassword');
+const authMessage = document.getElementById('authMessage');
+
+// Våra variabler för att hålla koll på inloggningen
+let token = localStorage.getItem('skutt_token');
+let currentUser = localStorage.getItem('skutt_user');
+
+// 1. Kolla om vi redan är inloggade när sidan laddas
+if (token) {
+    authOverlay.style.display = 'none'; // Göm inloggningsrutan
+    initApp(); // Starta SKUTT!
+}
+
+// 2. Lyssna på klick för Logga in / Skapa konto
+if (document.getElementById('loginBtn')) {
+    document.getElementById('loginBtn').addEventListener('click', () => handleAuth('login'));
+    document.getElementById('registerBtn').addEventListener('click', () => handleAuth('register'));
+}
+
+async function handleAuth(action) {
+    const username = authUsername.value.trim();
+    const password = authPassword.value;
+
+    if (!username || !password) {
+        authMessage.style.color = '#ff6b6b';
+        authMessage.textContent = 'Fyll i båda fälten.';
+        return;
+    }
+
+    authMessage.style.color = '#888888';
+    authMessage.textContent = 'Laddar...';
+
+    try {
+        const res = await fetch(`/api/auth?action=${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+            authMessage.style.color = '#ff6b6b';
+            authMessage.textContent = data.error || 'Ett fel uppstod.';
+            return;
+        }
+
+        if (action === 'register') {
+            authMessage.style.color = '#33ccff';
+            authMessage.textContent = 'Konto skapat! Du kan nu logga in.';
+        } else if (action === 'login') {
+            // Spara den hemliga biljetten (token) i webbläsaren
+            localStorage.setItem('skutt_token', data.token);
+            localStorage.setItem('skutt_user', data.username);
+            token = data.token;
+            currentUser = data.username;
+            
+            // Göm inloggningen och starta appen
+            authOverlay.style.display = 'none';
+            initApp();
+        }
+    } catch (err) {
+        authMessage.style.color = '#ff6b6b';
+        authMessage.textContent = 'Kunde inte ansluta till servern.';
+    }
+}
+
+// 3. Denna funktion startar appen (ritar grafen) först när vi är inloggade
+function initApp() {
+    if(document.getElementById('activeGraphSelect')) {
+        loadGraphSelector();
+        setTimeout(resizeCanvas, 50);
+        requestAnimationFrame(renderLoop);
+        
+        // Valfritt: Lägg till en liten utloggningsknapp uppe i hörnet
+        const logoutBtn = document.createElement('button');
+        logoutBtn.textContent = `Logga ut (${currentUser})`;
+        logoutBtn.className = 'sidebar-btn';
+        logoutBtn.style.position = 'absolute';
+        logoutBtn.style.top = '10px';
+        logoutBtn.style.right = '10px';
+        logoutBtn.style.borderColor = '#ff4d4d';
+        logoutBtn.style.color = '#ff4d4d';
+        logoutBtn.onclick = () => {
+            localStorage.removeItem('skutt_token');
+            localStorage.removeItem('skutt_user');
+            window.location.reload();
+        };
+        document.body.appendChild(logoutBtn);
+    }
 }
