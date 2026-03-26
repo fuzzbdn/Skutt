@@ -372,6 +372,43 @@ export function setupUI() {
     };
 
     const scrollContainer = document.getElementById('scrollContainer');
+    // --- STÄLL TID / SIMULERING ---
+    const setSimTimeBtn = document.getElementById('setSimTimeBtn');
+    const resetSimTimeBtn = document.getElementById('resetSimTimeBtn');
+    const simulatedTimeInput = document.getElementById('simulatedTimeInput');
+
+    if (setSimTimeBtn && simulatedTimeInput) {
+        setSimTimeBtn.addEventListener('click', () => {
+            const timeVal = simulatedTimeInput.value;
+            if (!timeVal) return;
+            const parts = timeVal.split(':');
+            const simMins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            const realMins = getAbsoluteMinutes();
+            
+            state.simulationOffsetMinutes = simMins - realMins;
+            if (resetSimTimeBtn) resetSimTimeBtn.style.display = 'inline-block';
+            
+            state.isTrackingNow = true;
+            state.currentRealMinutes = getAbsoluteMinutes() + state.simulationOffsetMinutes;
+            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
+            updateScrollFromTime();
+            state.needsRedraw = true;
+        });
+    }
+
+    if (resetSimTimeBtn) {
+        resetSimTimeBtn.addEventListener('click', () => {
+            state.simulationOffsetMinutes = 0;
+            if (simulatedTimeInput) simulatedTimeInput.value = '';
+            resetSimTimeBtn.style.display = 'none';
+            
+            state.isTrackingNow = true;
+            state.currentRealMinutes = getAbsoluteMinutes();
+            state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
+            updateScrollFromTime();
+            state.needsRedraw = true;
+        });
+    }
     const scrollContent = document.getElementById('scrollContent');
 
     const planWorkBtn = document.getElementById('planWorkBtn');
@@ -641,8 +678,10 @@ export function setupUI() {
         state.needsRedraw = true;
     });
 
-    setInterval(() => {
-        state.currentRealMinutes = getAbsoluteMinutes();
+setInterval(() => {
+        // Lägg till offseten så att klockan tickar utifrån din simulerade tid
+        state.currentRealMinutes = getAbsoluteMinutes() + state.simulationOffsetMinutes;
+        
         if (state.isTrackingNow) {
             state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
             updateScrollFromTime();
