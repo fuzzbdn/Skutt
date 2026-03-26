@@ -1,8 +1,11 @@
 import { state, getAbsoluteMinutes } from './state.js';
 import { getY, getTimeFromY, getX, margin, getStationFromX } from './math.js';
 import { canvas, drawGraph, getNodeX } from './canvas.js';
-import { saveTrainsToDatabase, debouncedSave } from './api.js';
+import { saveTrainsToDatabase, debouncedSave, loadWorksFromDatabase } from './api.js';
 
+// ==========================================
+// MATTE OCH HJÄLPFUNKTIONER FÖR MUSEN
+// ==========================================
 function getClosestBound(x, isLeftBound) {
     let minDiff = Infinity;
     let result = { station: 0, inc: true };
@@ -60,7 +63,6 @@ function getHoveredNode(mx, my) {
     return bestNode;
 }
 
-// ÅTERSTÄLLD: Skapar det nya mötet i tidtabellen
 export function resolveConflict(conflict, stIdx) {
     const ensureNode = (trainIdx) => {
         let train = state.trains[trainIdx];
@@ -120,11 +122,180 @@ export function resolveConflict(conflict, stIdx) {
     state.needsRedraw = true;
 }
 
+// ==========================================
+// FUNKTIONER FÖR ARBETSMEDALEN
+// ==========================================
+function updateWorkAreaDisplay() {
+    const startIdx = parseInt(document.getElementById('workStartStation').value);
+    const endIdx = parseInt(document.getElementById('workEndStation').value);
+    const incStart = document.getElementById('incStart').value === 'true';
+    const incEnd = document.getElementById('incEnd').value === 'true';
+    
+    if (isNaN(startIdx) || isNaN(endIdx) || !state.stations[startIdx] || !state.stations[endIdx]) return;
 
+    let startSign = state.stations[startIdx].sign;
+    let endSign = state.stations[endIdx].sign;
+    let startName = state.stations[startIdx].name;
+    let endName = state.stations[endIdx].name;
+
+    let sTextSign = incStart ? startSign : `(${startSign})`;
+    let eTextSign = incEnd ? endSign : `(${endSign})`;
+    let sTextName = incStart ? startName : `(${startName})`;
+    let eTextName = incEnd ? endName : `(${endName})`;
+
+    if (startIdx === endIdx && incStart && incEnd) {
+        document.getElementById('workAreaDisplay').textContent = startSign;
+        document.getElementById('workBlockedArea').value = startName;
+    } else {
+        document.getElementById('workAreaDisplay').textContent = `${sTextSign} - ${eTextSign}`;
+        document.getElementById('workBlockedArea').value = `${sTextName}-${eTextName}`;
+    }
+}
+
+function getFormMinutes(timeId) {
+    const timeEl = document.getElementById(timeId);
+    if (!timeEl || !timeEl.value) return NaN;
+    const parts = timeEl.value.split(':');
+    return (parseInt(parts[0]) * 60) + parseInt(parts[1]);
+}
+
+function setWorkBounds(sIdx, sInc, eIdx, eInc) {
+    document.getElementById('workStartStation').value = sIdx;
+    document.getElementById('incStart').value = sInc;
+    document.getElementById('workEndStation').value = eIdx;
+    document.getElementById('incEnd').value = eInc;
+    updateWorkAreaDisplay();
+}
+
+function getBoundVal(sIdx, sInc, isLeft) {
+    return isLeft ? sIdx + (sInc ? 0 : 0.5) : sIdx - (sInc ? 0 : 0.5);
+}
+
+// Den funktion som faktiskt kommunicerar med ditt API för att spara!
+async function saveMtoWork(status) {
+    const workType = document.getElementById('workType').value;
+    const rawLabel = document.getElementById('workLabel').value;
+    const trainRef = document.getElementById('workTrainReference').value;
+    
+    let startTime = getFormMinutes('workStartTime'); 
+    let endTime = getFormMinutes('workEndTime');
+    
+    if(isNaN(startTime)) startTime = state.currentRealMinutes;
+    if(isNaN(endTime)) endTime = state.currentRealMinutes + 60;
+
+    const existingWork = state.editingWorkId ? state.trackWorks.find(w => w.id === state.editingWorkId) : null;
+    if (status === 'Startad' && (!existingWork || existingWork.status !== 'Startad')) startTime = state.currentRealMinutes;
+    if (status === 'Avslutad' && (!existingWork || existingWork.status !== 'Avslutad')) endTime = state.currentRealMinutes;
+    
+    let displayLabel = rawLabel ? `${workType}: ${rawLabel}` : workType;
+    if (workType === 'Efter tåg' && trainRef) displayLabel = `Efter tåg ${trainRef}: ${rawLabel}`;
+
+    const newWork = {
+        id: state.editingWorkId || Date.now().toString(), 
+        graph_id: state.activeGraphId,
+        label: displayLabel, 
+        type: workType, 
+        rawLabel: rawLabel, 
+        trainReference: trainRef,
+        status: status,
+        startStation: parseInt(document.getElementById('workStartStation').value), 
+        endStation: parseInt(document.getElementById('workEndStation').value),
+        incStart: document.getElementById('incStart').value === 'true',
+        incEnd: document.getElementById('incEnd').value === 'true',
+        startTime: startTime, 
+        endTime: endTime, 
+        track: document.getElementById('workTrack').value,
+        endPlace: document.getElementById('workEndPlace').value,
+        bounds: document.getElementById('workBounds').value, 
+        blockedArea: document.getElementById('workBlockedArea').value,
+        switches: document.getElementById('workSwitches').value,
+        consultation: document.getElementById('workConsultation').value,
+        contactName: document.getElementById('workContactName').value, 
+        contactPhone: document.getElementById('workContactPhone').value, 
+        detailsText: document.getElementById('workDetails').value
+    };
+    
+    try {
+        await fetch('/api/works', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify(newWork)
+        });
+        
+        await loadWorksFromDatabase();
+        document.getElementById('workModal').style.display = 'none'; 
+        state.needsRedraw = true;
+    } catch (error) {
+        console.error("Kunde inte spara:", error);
+        alert("Något gick snett när datan skulle sparas till molnet.");
+    }
+}
+
+
+// ==========================================
+// KNYT IHOP ALLA HÄNDELSER
+// ==========================================
 export function setupUI() {
     const scrollContainer = document.getElementById('scrollContainer');
     const scrollContent = document.getElementById('scrollContent');
 
+    // -- KOPPLA KNAPPAR FÖR BANARBETEN --
+    const planWorkBtn = document.getElementById('planWorkBtn');
+    if (planWorkBtn) planWorkBtn.onclick = () => saveMtoWork('Planerad');
+    
+    const startWorkBtn = document.getElementById('startWorkBtn');
+    if (startWorkBtn) startWorkBtn.onclick = () => saveMtoWork('Startad');
+    
+    const finishWorkBtn = document.getElementById('finishWorkBtn');
+    if (finishWorkBtn) finishWorkBtn.onclick = () => saveMtoWork('Avslutad');
+    
+    const cancelWorkBtn = document.getElementById('cancelWorkBtn');
+    if (cancelWorkBtn) cancelWorkBtn.onclick = () => document.getElementById('workModal').style.display = 'none';
+
+    // -- KOPPLA PIL-KNAPPARNA I MODALEN --
+    const btnExpandLeft = document.getElementById('btnExpandLeft');
+    if (btnExpandLeft) btnExpandLeft.onclick = () => {
+        let sIdx = parseInt(document.getElementById('workStartStation').value);
+        let sInc = document.getElementById('incStart').value === 'true';
+        if (!sInc) { sInc = true; setWorkBounds(sIdx, sInc, parseInt(document.getElementById('workEndStation').value), document.getElementById('incEnd').value === 'true'); } 
+        else if (sIdx > 0) { sIdx--; sInc = false; setWorkBounds(sIdx, sInc, parseInt(document.getElementById('workEndStation').value), document.getElementById('incEnd').value === 'true'); }
+    };
+
+    const btnShrinkLeft = document.getElementById('btnShrinkLeft');
+    if (btnShrinkLeft) btnShrinkLeft.onclick = () => {
+        let sIdx = parseInt(document.getElementById('workStartStation').value);
+        let sInc = document.getElementById('incStart').value === 'true';
+        let eIdx = parseInt(document.getElementById('workEndStation').value);
+        let eInc = document.getElementById('incEnd').value === 'true';
+        let nextSIdx = sIdx, nextSInc = sInc;
+        if (sInc) nextSInc = false; else if (sIdx < state.stations.length - 1) { nextSIdx++; nextSInc = true; }
+        if (getBoundVal(nextSIdx, nextSInc, true) <= getBoundVal(eIdx, eInc, false)) setWorkBounds(nextSIdx, nextSInc, eIdx, eInc);
+    };
+
+    const btnExpandRight = document.getElementById('btnExpandRight');
+    if (btnExpandRight) btnExpandRight.onclick = () => {
+        let eIdx = parseInt(document.getElementById('workEndStation').value);
+        let eInc = document.getElementById('incEnd').value === 'true';
+        if (!eInc) { eInc = true; setWorkBounds(parseInt(document.getElementById('workStartStation').value), document.getElementById('incStart').value === 'true', eIdx, eInc); } 
+        else if (eIdx < state.stations.length - 1) { eIdx++; eInc = false; setWorkBounds(parseInt(document.getElementById('workStartStation').value), document.getElementById('incStart').value === 'true', eIdx, eInc); }
+    };
+
+    const btnShrinkRight = document.getElementById('btnShrinkRight');
+    if (btnShrinkRight) btnShrinkRight.onclick = () => {
+        let sIdx = parseInt(document.getElementById('workStartStation').value);
+        let sInc = document.getElementById('incStart').value === 'true';
+        let eIdx = parseInt(document.getElementById('workEndStation').value);
+        let eInc = document.getElementById('incEnd').value === 'true';
+        let nextEIdx = eIdx, nextEInc = eInc;
+        if (eInc) nextEInc = false; else if (eIdx > 0) { nextEIdx--; nextEInc = true; }
+        if (getBoundVal(sIdx, sInc, true) <= getBoundVal(nextEIdx, nextEInc, false)) setWorkBounds(sIdx, sInc, nextEIdx, nextEInc);
+    };
+
+
+    // -- SCROLL OCH FÖNSTER --
     window.addEventListener('resize', resizeCanvas);
     function resizeCanvas() {
         if (!canvas) return;
@@ -157,7 +328,8 @@ export function setupUI() {
         state.isTrackingNow = tempTracking;
     }
 
-    // --- MUSHÄNDELSER ---
+
+    // -- MUSHÄNDELSER PÅ GRAFEN --
     canvas.addEventListener('mousedown', (e) => {
         if(state.stations.length === 0) return;
         const rect = canvas.getBoundingClientRect();
@@ -167,7 +339,6 @@ export function setupUI() {
             state.isDraggingNowLine = true; state.isTrackingNow = true; canvas.style.cursor = 'ns-resize'; return; 
         }
 
-        // ÅTERSTÄLLD: Klickar vi på en konflikt-ring?
         let hitConflict = state.conflicts.find(c => Math.hypot(state.startPos.x - c.x, state.startPos.y - c.y) < 12);
         if (hitConflict) { 
             state.draggingConflict = hitConflict; 
@@ -214,7 +385,6 @@ export function setupUI() {
             updateScrollFromTime(); state.needsRedraw = true; return;
         }
         
-        // ÅTERSTÄLLD: Drar vi ett tågmöte?
         if (state.draggingConflict) { 
             canvas.style.cursor = 'move'; 
             state.needsRedraw = true; 
@@ -246,7 +416,6 @@ export function setupUI() {
         if(state.stations.length === 0) return;
         if (state.isDraggingNowLine) { state.isDraggingNowLine = false; canvas.style.cursor = 'default'; return; }
         
-        // ÅTERSTÄLLD: Släpper vi ett tågmöte på en station?
         if (state.draggingConflict) {
             resolveConflict(state.draggingConflict, getStationFromX(state.currentMouseX, canvas.width));
             state.draggingConflict = null; canvas.style.cursor = 'default'; state.needsRedraw = true; return;
@@ -260,6 +429,7 @@ export function setupUI() {
         if (!state.isSelecting) return;
         state.isSelecting = false;
         
+        // Öppna arbetsmodalen
         if (Math.abs(state.currentMouseX - state.startPos.x) > 10 || Math.abs(state.currentMouseY - state.startPos.y) > 10) {
             let minX = Math.min(state.startPos.x, state.currentMouseX);
             let maxX = Math.max(state.startPos.x, state.currentMouseX);
@@ -283,6 +453,12 @@ export function setupUI() {
             };
             setFormTime(Math.min(t1, t2), 'workStartTime'); 
             setFormTime(Math.max(t1, t2), 'workEndTime');
+            
+            ['workLabel', 'workTrainReference', 'workTrack', 'workEndPlace', 'workBounds', 'workBlockedArea', 'workSwitches', 'workDetails', 'workConsultation', 'workContactName', 'workContactPhone'].forEach(id => { 
+                if(document.getElementById(id)) document.getElementById(id).value = ""; 
+            });
+            
+            updateWorkAreaDisplay(); // VIKTIG: Denna saknades och skapade fel förut!
             
             state.editingWorkId = null; 
             document.getElementById('workType').value = 'A-s';
