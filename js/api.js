@@ -1,32 +1,41 @@
 import { state } from './state.js';
 
-// --- TOLK 1: När Grafen HÄMTAR tåg ---
-// Gör om '2026-03-27T12:00' till minuter från Dagens Midnatt
-function parseToMins(val) {
+// --- TOLK 1: Gör om tider till minuter (Klarar både "12:00" och "2026-03-27T12:00") ---
+function parseToMins(val, startDateStr) {
     if (val === null || val === undefined || val === '') return 0;
     let strVal = String(val);
 
+    let targetDateStr;
+    let timeStr;
+
+    // 1. Om tidsstämpeln har ett datum inbyggt (t.ex. från importen)
     if (strVal.includes('T')) {
-        let datePart = strVal.split('T')[0];
-        let timePart = strVal.split('T')[1];
-        let parts = timePart.split(':');
-        let minsFromMidnight = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-
-        let targetDate = new Date(datePart + "T00:00:00");
-        let today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        // Diff i dagar ignorerar helt sommartid/vintertid och ger alltid rena 24-timmars-hopp!
-        let diffDays = Math.round((targetDate.getTime() - today.getTime()) / 86400000);
-
-        return (diffDays * 1440) + minsFromMidnight;
+        let parts = strVal.split('T');
+        targetDateStr = parts[0];
+        timeStr = parts[1];
+    } 
+    // 2. Om det bara är "12:00", tvinga in tågets startdatum!
+    else if (strVal.includes(':')) {
+        targetDateStr = startDateStr || new Date().toISOString().split('T')[0];
+        timeStr = strVal;
+    } 
+    // 3. Om det är gamla sparade minuter (fallback)
+    else {
+        return parseInt(strVal, 10) || 0;
     }
 
-    if (strVal.includes(':')) {
-        let parts = strVal.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-    }
-    return parseInt(strVal, 10) || 0;
+    let timeParts = timeStr.split(':');
+    let minsFromMidnight = parseInt(timeParts[0], 10) * 60 + parseInt(timeParts[1], 10);
+
+    // Jämför alltid med midnatt för DAGENS datum
+    let targetDate = new Date(targetDateStr + "T00:00:00");
+    let today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Diff i dagar räknar ut hur många dygn bakåt/framåt vi ska (sommartidssäkert)
+    let diffDays = Math.round((targetDate.getTime() - today.getTime()) / 86400000);
+
+    return (diffDays * 1440) + minsFromMidnight;
 }
 
 // --- HJÄLPFUNKTION: Rensa stationsnamn (tar bort mellanslag och gemener) ---
@@ -53,8 +62,9 @@ export async function loadWorksFromDatabase() {
             const rawWorks = await response.json();
             state.trackWorks = rawWorks.map(w => ({
                 id: w.id, type: w.type, label: w.label, status: w.status,
-                startTime: parseToMins(w.start_time), 
-                endTime: parseToMins(w.end_time),
+                // Arbeten har sällan startDateStr ännu, vi skickar null
+                startTime: parseToMins(w.start_time, null), 
+                endTime: parseToMins(w.end_time, null),
                 startStation: w.start_station, endStation: w.end_station,
                 track: w.track, blockedArea: w.blocked_area,
                 incStart: w.inc_start ?? true, incEnd: w.inc_end ?? true,
@@ -104,8 +114,9 @@ export async function loadTrainsFromDatabase() {
                     let stIdx = state.stations.findIndex(s => cleanSign(s.sign) === cleanSign(stop.stationSign));
                     return stIdx !== -1 ? { 
                         station: stIdx, 
-                        arrival: parseToMins(stop.arrival), 
-                        departure: parseToMins(stop.departure) 
+                        // NU skickar vi med startdatumet så att historiska tåg tvingas bakåt i tiden!
+                        arrival: parseToMins(stop.arrival, train.startDate), 
+                        departure: parseToMins(stop.departure, train.startDate) 
                     } : null;
                 }).filter(n => n !== null);
                 
@@ -115,13 +126,12 @@ export async function loadTrainsFromDatabase() {
             }).filter(t => {
                 if (t.timetable.length < 2) return false;
                 
-                // 🚨 SMART FILTER: Dölj historiska tåg! 🚨
-                // Vi filtrerar bort tåg som är äldre än 24 timmar eller framtidståg längre bort än 48h
+                // 🚨 SMART FILTER: Dölj historiska tåg!
                 const firstStop = t.timetable[0].arrival;
                 const lastStop = t.timetable[t.timetable.length - 1].departure;
                 
-                // Endast tåg som avslutar sin rutt >= -1440 (Igår 00:00) 
-                // och börjar sin rutt <= 2880 (I övermorgon 00:00) visas i grafen.
+                // Döljer alla tåg som är mer än 24h i det förflutna (<-1440) 
+                // eller mer än 48h i framtiden (>2880)
                 return lastStop >= -1440 && firstStop <= 2880;
             });
             state.needsRedraw = true;
@@ -130,7 +140,6 @@ export async function loadTrainsFromDatabase() {
 }
 
 // --- TOLK 2: När Grafen SPARAR tåg ---
-// Gör om minuter från Dagens Midnatt tillbaka till 'YYYY-MM-DDThh:mm' på ett sommartidssäkert sätt
 export async function saveTrainsToDatabase() {
     if (!state.activeGraphId || state.trains.length === 0) return;
 
@@ -141,7 +150,7 @@ export async function saveTrainsToDatabase() {
         
         let d = new Date();
         d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + days); // Lägg till antal dagar
+        d.setDate(d.getDate() + days); // Lägg till antal dagar från idags-midnatt
         
         let yyyy = d.getFullYear();
         let mm = String(d.getMonth() + 1).padStart(2, '0');
