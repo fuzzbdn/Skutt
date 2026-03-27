@@ -1,12 +1,30 @@
 import { state } from './state.js';
 
-// --- HJÄLPFUNKTION: Tolka alltid tid till minuter för grafen ---
+
+// --- HJÄLPFUNKTION: Gör om "YYYY-MM-DDThh:mm" till absoluta minuter för grafen ---
 function parseToMins(val) {
     if (typeof val === 'number') return Math.round(val);
+    if (!val) return 0;
+    
+    // Om det är ett fullständigt datum (innehåller T eller bindestreck)
+    if (val.includes('T') || val.includes('-')) {
+        const targetDate = new Date(val);
+        
+        // Skapa referenspunkten: Midnatt för *idag* (eller den dag du är inloggad)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Skillnad i millisekunder omvandlat till minuter
+        const diffMs = targetDate.getTime() - today.getTime();
+        return Math.round(diffMs / 60000);
+    }
+    
+    // Fallback om någon gammal "12:00"-sträng ligger kvar i systemet
     if (typeof val === 'string' && val.includes(':')) {
         const parts = val.split(':');
         return (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
     }
+    
     return parseInt(val, 10) || 0;
 }
 
