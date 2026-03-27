@@ -15,7 +15,11 @@ export const state = {
     isTrackingNow: true,
     nowOffsetPercentage: 0.3,
     viewDuration: 120,
-    scrollSpeed: 0.4,
+
+    // Inställningar
+    viewDuration: 120,
+    scrollMinutes: 10,
+    nodeStepMinutes: 2,
 
     // Användare
     token: localStorage.getItem('skutt_token') || null,
@@ -42,7 +46,7 @@ export const state = {
     conflictSegments: new Set(),
     draggingConflict: null,
     activeTooltipNode: null,
-    tooltipHitboxes: null
+    tooltipHitboxes: null,
 };
 
 // En hjälpfunktion för att räkna ut absolut tid
