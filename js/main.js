@@ -23,11 +23,13 @@ document.addEventListener('DOMContentLoaded', () => {
 export async function initApp() {
     createLogoutButton();
     // HÄMTA ANVÄNDARINSTÄLLNINGAR GLOBALT
+// HÄMTA ANVÄNDARINSTÄLLNINGAR GLOBALT
     try {
         const settingsRes = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${state.token}` } });
         if (settingsRes.ok) {
             const settingsData = await settingsRes.json();
-            if (settingsData.scroll_sensitivity) state.scrollSpeed = parseFloat(settingsData.scroll_sensitivity);
+            if (settingsData.scroll_minutes) state.scrollMinutes = parseInt(settingsData.scroll_minutes);
+            if (settingsData.node_step_minutes) state.nodeStepMinutes = parseInt(settingsData.node_step_minutes);
             if (settingsData.view_duration) state.viewDuration = parseInt(settingsData.view_duration);
         }
     } catch (e) { console.error("Kunde inte ladda personliga inställningar", e); }
