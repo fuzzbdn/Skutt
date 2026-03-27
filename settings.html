@@ -16,10 +16,15 @@
     <div class="admin-container" style="max-width: 600px; margin: 40px auto; padding: 20px; background: #25262b; border-radius: 8px;">
         
         <div style="margin-bottom: 25px;">
-            <label style="color: #ececec; font-weight: bold; display: block; margin-bottom: 5px;">Skrollhastighet i grafen</label>
-            <p style="font-size: 0.8em; color: #888; margin-bottom: 10px;">Styr hur snabbt grafen rör sig när du använder mushjulet.</p>
-            <input type="range" id="scrollSpeedInput" min="0.1" max="1.5" step="0.1" value="0.4" style="width: 100%;">
-            <div style="text-align: center; color: #33ccff; font-weight: bold; margin-top: 5px;" id="scrollSpeedValue">0.4x (Mjukare)</div>
+            <label style="color: #ececec; font-weight: bold; display: block; margin-bottom: 5px;">Skrollsteg i grafen (minuter)</label>
+            <p style="font-size: 0.8em; color: #888; margin-bottom: 10px;">Antal minuter grafen ska hoppa fram/bakåt för varje "klick" på mushjulet.</p>
+            <input type="number" id="scrollMinutesInput" value="10" style="width: 100%; padding: 10px; background: #1a1b1e; border: 1px solid #373a40; color: white; border-radius: 4px;">
+        </div>
+
+        <div style="margin-bottom: 25px;">
+            <label style="color: #ececec; font-weight: bold; display: block; margin-bottom: 5px;">Tidsjustering noder (minuter)</label>
+            <p style="font-size: 0.8em; color: #888; margin-bottom: 10px;">Antal minuter tiderna ska flyttas när du hovrar över ett tågs uppehåll och skrollar.</p>
+            <input type="number" id="nodeStepInput" value="2" style="width: 100%; padding: 10px; background: #1a1b1e; border: 1px solid #373a40; color: white; border-radius: 4px;">
         </div>
 
         <div style="margin-bottom: 30px;">
