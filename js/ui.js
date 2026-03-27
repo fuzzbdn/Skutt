@@ -1,7 +1,15 @@
-import { state, getAbsoluteMinutes } from './state.js';
+import { state, getAbsoluteMinutes, history } from './state.js';
 import { getY, getTimeFromY, getX, margin, getStationFromX, formatTime } from './math.js';
 import { canvas, drawGraph, getNodeX } from './canvas.js';
 import { saveTrainsToDatabase, debouncedSave, loadWorksFromDatabase, deleteWorkFromDatabase } from './api.js';
+
+// --- NY FUNKTION: Tar en fotokopia av grafen ---
+export function saveToHistory() {
+    // Spara en exakt och oberoende kopia av tågen i historiken
+    history.push(JSON.parse(JSON.stringify(state.trains)));
+    // Behåll max de 20 senaste stegen för att inte fylla minnet
+    if (history.length > 20) history.shift();
+}
 
 function getClosestBound(x, isLeftBound) {
     let minDiff = Infinity;
@@ -28,14 +36,14 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
 
 function getHitTrainIndex(mx, my) {
     let bestTrain = null, minDist = 12; 
-    const viewEnd = state.currentStartTime + state.viewDuration; // 🚀 Snabb-culling för klick!
+    const viewEnd = state.currentStartTime + state.viewDuration; 
 
     for (let i = 0; i < state.trains.length; i++) {
         if(!state.trains[i].timetable || state.trains[i].timetable.length < 2) continue;
         
         let tMin = state.trains[i].timetable[0].arrival;
         let tMax = state.trains[i].timetable[state.trains[i].timetable.length-1].departure;
-        if (tMax < state.currentStartTime || tMin > viewEnd) continue; // 🚀 Ignorera osynliga
+        if (tMax < state.currentStartTime || tMin > viewEnd) continue; 
 
         for (let j = 0; j < state.trains[i].timetable.length - 1; j++) {
             let n1 = state.trains[i].timetable[j], n2 = state.trains[i].timetable[j+1];
@@ -68,6 +76,8 @@ function getHoveredNode(mx, my) {
 }
 
 export function resolveConflict(conflict, stIdx) {
+    saveToHistory(); // Spara innan vi justerar mötet!
+
     const ensureNode = (trainIdx) => {
         let train = state.trains[trainIdx];
         let nodeIdx = train.timetable.findIndex(n => n.station === stIdx);
@@ -124,7 +134,7 @@ export function resolveConflict(conflict, stIdx) {
     
     saveTrainsToDatabase();
     state.needsRedraw = true;
-    state.needsCalculations = true; // 🚨 RÄKNA OM
+    state.needsCalculations = true;
     state.needsSidebarUpdate = true;
 }
 
@@ -355,15 +365,41 @@ export function setupUI() {
 
     window.deleteSelectedTrain = function() {
         if(confirm('Vill du radera det valda tåget?')) {
+            saveToHistory(); // Spara innan vi raderar
             state.trains.splice(state.selectedTrainIndex, 1);
             state.selectedTrainIndex = null;
             state.activeNode = null;
             saveTrainsToDatabase();
             state.needsRedraw = true;
-            state.needsCalculations = true; // 🚨 RÄKNA OM
+            state.needsCalculations = true;
             state.needsSidebarUpdate = true;
         }
     };
+
+    // --- NY FUNKTION: Ctrl+Z (ÅNGRA) ---
+    window.addEventListener('keydown', (e) => {
+        // Kontrollera om användaren trycker Ctrl + Z (eller Cmd + Z på Mac)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            if (history.length > 0) {
+                e.preventDefault(); // Stoppa webbläsarens vanliga ångra
+                
+                // Plocka fram den sparade kopian av tågen
+                state.trains = history.pop();
+                
+                // Återställ mus-val så inga osynliga noder fastnar
+                state.activeNode = null;
+                state.selectedTrainIndex = null;
+                state.draggingNode = null;
+                state.draggingConflict = null;
+                
+                // Tvinga omritning och spara om till databasen
+                state.needsRedraw = true;
+                state.needsCalculations = true;
+                state.needsSidebarUpdate = true;
+                debouncedSave();
+            }
+        }
+    });
 
     const scrollContainer = document.getElementById('scrollContainer');
     const scrollContent = document.getElementById('scrollContent');
@@ -429,7 +465,7 @@ export function setupUI() {
         scrollContent.style.height = ((state.viewDuration * 2) * (canvas.height / state.viewDuration)) + "px";
         updateScrollFromTime();
         state.needsRedraw = true;
-        state.needsCalculations = true; // 🚨 RÄKNA OM (Nya tåg kan ha kommit in i bild)
+        state.needsCalculations = true;
     }
 
     scrollContainer?.addEventListener('scroll', () => {
@@ -440,7 +476,7 @@ export function setupUI() {
             const minTime = state.currentRealMinutes - 24 * 60;
             state.currentStartTime = (maxTime - state.viewDuration) - (scrollContainer.scrollTop / maxScroll) * (maxTime - minTime - state.viewDuration);
             state.needsRedraw = true;
-            state.needsCalculations = true; // 🚨 RÄKNA OM (Du skrollar fram nya tåg)
+            state.needsCalculations = true; 
         }
     });
 
@@ -462,7 +498,7 @@ export function setupUI() {
             state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
             updateScrollFromTime();
             state.needsRedraw = true;
-            state.needsCalculations = true; // 🚨 RÄKNA OM
+            state.needsCalculations = true;
         });
     }
 
@@ -556,7 +592,14 @@ export function setupUI() {
         }
 
         const hNode = getHoveredNode(state.startPos.x, state.startPos.y);
-        if (hNode) { state.draggingNode = hNode; state.activeNode = hNode; canvas.style.cursor = 'ns-resize'; state.needsRedraw = true; return; }
+        if (hNode) { 
+            saveToHistory(); // Spara innan vi rör en nod!
+            state.draggingNode = hNode; 
+            state.activeNode = hNode; 
+            canvas.style.cursor = 'ns-resize'; 
+            state.needsRedraw = true; 
+            return; 
+        }
         
         const hitTrain = getHitTrainIndex(state.startPos.x, state.startPos.y);
         if (hitTrain !== null) {
@@ -567,12 +610,13 @@ export function setupUI() {
             if (Math.abs(state.startPos.x - getX(stIdx, canvas.width)) < 15) {
                 const tr = state.trains[hitTrain];
                 if (!tr.timetable.find(n => n.station === stIdx)) {
+                    saveToHistory(); // Spara innan vi lägger till en ny station!
                     const timeAtClick = Math.round(getTimeFromY(state.startPos.y, canvas.height));
                     tr.timetable.push({ station: stIdx, arrival: timeAtClick, departure: timeAtClick });
                     tr.timetable.sort((a, b) => a.arrival - b.arrival);
                     state.activeNode = state.draggingNode = { trainIndex: hitTrain, nodeIndex: tr.timetable.findIndex(n => n.station === stIdx), type: 'arrival' };
                     canvas.style.cursor = 'ns-resize';
-                    state.needsCalculations = true; // 🚨 RÄKNA OM (Ny nod inlagd)
+                    state.needsCalculations = true;
                 }
             }
             state.needsRedraw = true; return;
@@ -615,7 +659,6 @@ export function setupUI() {
                 let diff = Math.max(newTime, node.arrival) - node.departure; node.departure += diff;
                 for (let k = state.draggingNode.nodeIndex + 1; k < tr.timetable.length; k++) { tr.timetable[k].arrival += diff; tr.timetable[k].departure += diff; }
             }
-            // 🚨 ENDAST REDRAW HÄR FÖR ATT SLIPPA LAGG! (Räknar om krockar på mouseup istället)
             state.needsRedraw = true; return;
         }
         
@@ -630,7 +673,7 @@ export function setupUI() {
             resolveConflict(state.draggingConflict, getStationFromX(state.currentMouseX, canvas.width));
             state.draggingConflict = null; canvas.style.cursor = 'default'; 
             state.needsRedraw = true; 
-            state.needsCalculations = true; // 🚨 RÄKNA OM
+            state.needsCalculations = true;
             return;
         }
 
@@ -638,7 +681,7 @@ export function setupUI() {
             state.trains[state.draggingNode.trainIndex].timetable.sort((a, b) => a.arrival - b.arrival); 
             state.draggingNode = null; canvas.style.cursor = 'default'; saveTrainsToDatabase(); 
             state.needsRedraw = true; 
-            state.needsCalculations = true; // 🚨 RÄKNA OM (Du släppte noden)
+            state.needsCalculations = true;
             return;
         }
 
@@ -702,7 +745,7 @@ export function setupUI() {
                 for (let k = state.activeNode.nodeIndex + 1; k < tr.timetable.length; k++) { tr.timetable[k].arrival += diff; tr.timetable[k].departure += diff; }
             }
             state.needsRedraw = true; 
-            state.needsCalculations = true; // 🚨 RÄKNA OM
+            state.needsCalculations = true;
             debouncedSave(); return;
         }
 
@@ -717,7 +760,7 @@ export function setupUI() {
         
         updateScrollFromTime();
         state.needsRedraw = true;
-        state.needsCalculations = true; // 🚨 RÄKNA OM (Du skrollar fram nya tåg)
+        state.needsCalculations = true;
     });
 
     setInterval(() => {
@@ -727,7 +770,7 @@ export function setupUI() {
         if (state.isTrackingNow) {
             state.currentStartTime = state.currentRealMinutes - (state.viewDuration * state.nowOffsetPercentage);
             updateScrollFromTime();
-            state.needsCalculations = true; // Eftersom tidslinjen flyttar sig hela tiden
+            state.needsCalculations = true; 
         }
         state.needsRedraw = true; 
     }, 1000);
