@@ -26,7 +26,7 @@ export const state = {
     nowOffsetPercentage: 0.3,
     
     needsRedraw: true,
-    needsCalculations: true, // 🚨 NY FLAGGA FÖR PRESTANDA!
+    needsCalculations: true, 
     needsSidebarUpdate: false,
     isTrackingNow: true,
     
@@ -40,3 +40,5 @@ export function getAbsoluteMinutes() {
     // Räknar alltid exakt antal minuter sedan appen startades, helt skottsäkert!
     return ((now - referenceMidnight) / 60000) + state.simulationOffsetMinutes;
 }
+
+export const history = []; // 🚨 NY: Håller koll på dina senaste 20 drag för Ctrl+Z
