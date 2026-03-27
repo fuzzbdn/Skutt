@@ -264,7 +264,7 @@ function renderSidebar() {
 
     let html = `<div class="work-list">`;
 
-    // En hjälpfunktion för att bygga HTML-kortet för varje arbete
+    // Hjälpfunktion för att bygga HTML-kortet för varje arbete
     const buildCard = (work) => {
         let color = work.status === 'Planerad' ? '#ffd700' : (work.status === 'Avslutad' ? '#666666' : '#ff4d4d'); 
         let isExpanded = work.id === state.expandedWorkId;
@@ -293,7 +293,7 @@ function renderSidebar() {
     // Rendera Planerade och Startade arbeten först
     activeWorks.forEach(work => { html += buildCard(work); });
 
-    // Rendera Avslutade arbeten längst ner (med avskiljare)
+    // Rendera Avslutade arbeten längst ner
     if (finishedWorks.length > 0) {
         if (activeWorks.length > 0) {
             html += `<div style="margin: 15px 0 10px 0; border-bottom: 1px solid #3f4147;"></div>`;
@@ -655,10 +655,12 @@ export function setupUI() {
         state.needsRedraw = true;
     });
 
+    // NY HJUL-LOGIK (Använder Inställningar)
     canvas.addEventListener('wheel', (e) => {
-        const timeDelta = e.deltaY < 0 ? 2 : -2; 
         if (state.activeNode) {
             e.preventDefault();
+            const timeDelta = e.deltaY < 0 ? state.nodeStepMinutes : -state.nodeStepMinutes;
+
             const tr = state.trains[state.activeNode.trainIndex], node = tr.timetable[state.activeNode.nodeIndex];
             if (state.activeNode.type === 'arrival') {
                 let minAllowedTime = state.activeNode.nodeIndex > 0 ? tr.timetable[state.activeNode.nodeIndex - 1].departure : -Infinity;
@@ -676,13 +678,16 @@ export function setupUI() {
 
         e.preventDefault(); 
         state.isTrackingNow = false; 
-        // Applicerar skrollhastigheten (t.ex. 0.4 gör det mer än dubbelt så mjukt)
-        scrollContainer.scrollTop += (e.deltaY * state.scrollSpeed);
         
-        const maxScroll = scrollContent.clientHeight - scrollContainer.clientHeight;
+        const timeChange = e.deltaY > 0 ? -state.scrollMinutes : state.scrollMinutes;
+
         const maxTime = state.currentRealMinutes + 48 * 60;
         const minTime = state.currentRealMinutes - 24 * 60;
-        state.currentStartTime = (maxTime - state.viewDuration) - (scrollContainer.scrollTop / maxScroll) * (maxTime - minTime - state.viewDuration);
+        
+        state.currentStartTime += timeChange;
+        state.currentStartTime = Math.max(minTime, Math.min(maxTime - state.viewDuration, state.currentStartTime));
+        
+        updateScrollFromTime();
         state.needsRedraw = true;
     });
 
