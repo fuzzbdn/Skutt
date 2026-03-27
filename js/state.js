@@ -1,57 +1,40 @@
-// fil: js/state.js
+// Vi fryser tiden när programmet startar så att koordinaterna aldrig hoppar vid midnatt
+const startupDate = new Date();
+export const referenceMidnight = new Date(startupDate.getFullYear(), startupDate.getMonth(), startupDate.getDate());
+export const referenceMidnightUTC = Date.UTC(startupDate.getFullYear(), startupDate.getMonth(), startupDate.getDate());
 
 export const state = {
-    // Data
+    token: localStorage.getItem('skutt_token'),
+    user: localStorage.getItem('skutt_user'),
     activeGraphId: null,
-    savedGraphs: [],
     stations: [],
     trains: [],
     trackWorks: [],
-
-    // Tid
-    simulationOffsetMinutes: 0,
-    currentRealMinutes: 0,
-    currentStartTime: 0,
-    isTrackingNow: true,
-    nowOffsetPercentage: 0.3,
-    viewDuration: 120,
-
-    // Inställningar
-    viewDuration: 120,
-    scrollMinutes: 10,
-    nodeStepMinutes: 2,
-
-    // Användare
-    token: localStorage.getItem('skutt_token') || null,
-    currentUser: localStorage.getItem('skutt_user') || null,
-
-    // Interaktion & Mus
+    
     isSelecting: false,
     isDraggingNowLine: false,
     startPos: { x: 0, y: 0 },
-    currentMouseX: 0,
-    currentMouseY: 0,
+    currentMouseX: 0, currentMouseY: 0,
+    expandedWorkId: null, editingWorkId: null,
     
-    // UI & Valda objekt
-    expandedWorkId: null,
-    editingWorkId: null,
-    selectedTrainIndex: null,
-    draggingNode: null,
-    activeNode: null,
+    selectedTrainIndex: null, draggingNode: null, activeNode: null,
+    conflicts: [], conflictSegments: new Set(), draggingConflict: null,
     
-    // Rendering & Konflikter
+    simulationOffsetMinutes: 0,
+    currentRealMinutes: 0, 
+    currentStartTime: 0,
+    nowOffsetPercentage: 0.3,
+    
     needsRedraw: true,
-    needsSidebarUpdate: true,
-    conflicts: [],
-    conflictSegments: new Set(),
-    draggingConflict: null,
-    activeTooltipNode: null,
-    tooltipHitboxes: null,
+    needsSidebarUpdate: false,
+    isTrackingNow: true,
+    
+    viewDuration: 120,
+    scrollMinutes: 10,
+    nodeStepMinutes: 2
 };
 
-// En hjälpfunktion för att räkna ut absolut tid
 export function getAbsoluteMinutes() {
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return ((now - startOfDay) / 60000) + state.simulationOffsetMinutes;
+    return ((now - referenceMidnight) / 60000) + state.simulationOffsetMinutes;
 }
