@@ -31,8 +31,15 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
 
 function getHitTrainIndex(mx, my) {
     let bestTrain = null, minDist = 12; 
+    const viewEnd = state.currentStartTime + state.viewDuration; // 🚀 Snabb-culling
+
     for (let i = 0; i < state.trains.length; i++) {
         if(!state.trains[i].timetable || state.trains[i].timetable.length < 2) continue;
+        
+        let tMin = state.trains[i].timetable[0].arrival;
+        let tMax = state.trains[i].timetable[state.trains[i].timetable.length-1].departure;
+        if (tMax < state.currentStartTime || tMin > viewEnd) continue; // 🚀 Hoppa över osynliga
+
         for (let j = 0; j < state.trains[i].timetable.length - 1; j++) {
             let n1 = state.trains[i].timetable[j], n2 = state.trains[i].timetable[j+1];
             let x1 = getNodeX(i, j), x2 = getNodeX(i, j+1);
