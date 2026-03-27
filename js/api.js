@@ -1,13 +1,11 @@
-import { state } from './state.js';
+import { state, referenceMidnightUTC } from './state.js';
 
-// --- SÄKER TIDSOMVANDLING (UTC-matematik för att undvika alla tidszonsbuggar) ---
 function parseToMins(val, startDateStr) {
     if (!val) return 0;
     let strVal = String(val);
 
     let yyyy, mm, dd, hh, min;
 
-    // Plocka isär datum och tid exakt som de är skrivna
     if (strVal.includes('T')) {
         let parts = strVal.split('T');
         let dParts = parts[0].split('-');
@@ -24,13 +22,8 @@ function parseToMins(val, startDateStr) {
         return parseInt(strVal, 10) || 0;
     }
 
-    // Tvinga webbläsaren att räkna i ren UTC-tid så vi slipper sommartids-krockar
-    let now = new Date();
-    let todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
     let targetUTC = Date.UTC(yyyy, mm - 1, dd);
-    
-    // Antal 24-timmars perioder (dagar) skillnad
-    let diffDays = Math.round((targetUTC - todayUTC) / 86400000);
+    let diffDays = Math.round((targetUTC - referenceMidnightUTC) / 86400000);
     let minsFromMidnight = (hh * 60) + min;
 
     return (diffDays * 1440) + minsFromMidnight;
@@ -90,15 +83,8 @@ export async function loadTrainsFromDatabase() {
                 
                 timetable.sort((a, b) => a.arrival - b.arrival);
                 return { id: train.id, startDate: train.startDate, timetable };
-            }).filter(t => {
-                if (t.timetable.length < 2) return false;
-                
-                // 🚨 SMART FILTER: Döljer allt som passerade för mer än 24h sedan, 
-                // eller som börjar om mer än 48h.
-                const firstStop = t.timetable[0].arrival;
-                const lastStop = t.timetable[t.timetable.length - 1].departure;
-                return lastStop >= -1440 && firstStop <= 2880;
-            });
+            }).filter(t => t.timetable.length >= 2);
+            // 🚨 Det gamla filtret är nu borttaget så vi inte förlorar data!
             state.needsRedraw = true;
         }
     } catch (error) { console.error("API Fel (trains):", error); }
@@ -107,14 +93,12 @@ export async function loadTrainsFromDatabase() {
 export async function saveTrainsToDatabase() {
     if (!state.activeGraphId || state.trains.length === 0) return;
 
-    // Gör om från minuter till ren databassträng, helt oberoende av webbläsarens tidszon
     const minsToDateString = (mins) => {
         let days = Math.floor(mins / 1440);
         let remainingMins = mins % 1440;
         if (remainingMins < 0) remainingMins += 1440; 
         
-        let now = new Date();
-        let targetUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + days));
+        let targetUTC = new Date(referenceMidnightUTC + (days * 86400000));
         
         let yyyy = targetUTC.getUTCFullYear();
         let mm = String(targetUTC.getUTCMonth() + 1).padStart(2, '0');
