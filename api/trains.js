@@ -28,7 +28,6 @@ export default async function handler(req, res) {
         const tNum = train.train_number;
         const sDate = train.start_date || 'IngetDatum';
         
-        // 🚨 LÖSNINGEN: Vi separerar på både ID och Datum!
         const uniqueKey = `${tNum}_${sDate}`; 
 
         if (!trainMap[uniqueKey]) {
@@ -65,26 +64,40 @@ export default async function handler(req, res) {
       const userGraph = await sql`SELECT id FROM graphs WHERE id = ${graphId} AND user_id = ${userId}`;
       if (userGraph.length === 0) return res.status(403).json({error: "Obehörig graf"});
 
+      // 1. Ta bort de gamla tågen för denna graf
       await sql`DELETE FROM trains WHERE graph_id = ${graphId}`;
       
-      for (let train of trains) {
+      // 2. Skapa en array med löften ("Promises") för alla nya tåg
+      const trainPromises = trains.map(async (train) => {
          const uniqueDbId = `${graphId}_${train.id}_${Math.random().toString(36).substr(2, 5)}`;
          const startDate = train.startDate || null;
 
+         // Skapa själva tåget i databasen först
          await sql`
            INSERT INTO trains (id, graph_id, train_number, start_date)
            VALUES (${uniqueDbId}, ${graphId}, ${train.id}, ${startDate})
          `;
 
-         for (let stop of train.timetable) {
-             await sql`
+         // 3. Skapa en array med löften för alla hållplatser på just detta tåg
+         const stopPromises = train.timetable.map(stop => {
+             return sql`
                INSERT INTO train_stops (train_id, station_sign, arrival, departure)
                VALUES (${uniqueDbId}, ${stop.stationSign}, ${stop.arrival}, ${stop.departure})
              `;
-         }
-      }
+         });
+         
+         // Skjut iväg alla hållplatser för tåget SAMTIDIGT!
+         await Promise.all(stopPromises);
+      });
+
+      // 4. Säg åt servern att skjuta iväg alla tåg SAMTIDIGT, och vänta tills alla är klara!
+      await Promise.all(trainPromises);
+
       return res.status(200).json({ success: true });
-    } catch (error) { return res.status(500).json({ error: error.message }); }
+    } catch (error) { 
+      return res.status(500).json({ error: error.message }); 
+    }
   }
+  
   res.status(405).json({ error: 'Metoden tillåts inte' });
 }
