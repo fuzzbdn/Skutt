@@ -10,17 +10,31 @@ function parseToMins(val) {
     return parseInt(val, 10) || 0;
 }
 
+// --- HJÄLPFUNKTION: Rensa stationsnamn (tar bort mellanslag och gemener) ---
+function cleanSign(sign) {
+    if (!sign) return "";
+    return sign.toString().trim().toLowerCase();
+}
+
 export async function loadWorksFromDatabase() {
     if (!state.activeGraphId) return;
     try {
         const response = await fetch(`/api/works?graphId=${state.activeGraphId}`, {
             headers: { 'Authorization': `Bearer ${state.token}` }
         });
+
+        // Hantera utloggning (om token har gått ut)
+        if (response.status === 401) {
+            alert("Din session har gått ut. Vänligen logga in igen.");
+            localStorage.clear();
+            window.location.href = 'index.html';
+            return;
+        }
+
         if (response.ok) {
             const rawWorks = await response.json();
             state.trackWorks = rawWorks.map(w => ({
                 id: w.id, type: w.type, label: w.label, status: w.status,
-                // Tvinga till minuter för grafen!
                 startTime: parseToMins(w.start_time), 
                 endTime: parseToMins(w.end_time),
                 startStation: w.start_station, endStation: w.end_station,
@@ -37,10 +51,17 @@ export async function loadWorksFromDatabase() {
 
 export async function deleteWorkFromDatabase(id) {
     try {
-        await fetch(`/api/works?id=${id}`, {
+        const response = await fetch(`/api/works?id=${id}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${state.token}` }
         });
+
+        if (response.status === 401) {
+            alert("Din session har gått ut. Vänligen logga in igen.");
+            localStorage.clear();
+            window.location.href = 'index.html';
+            return;
+        }
     } catch (error) { console.error("Kunde inte radera:", error); }
 }
 
@@ -50,12 +71,22 @@ export async function loadTrainsFromDatabase() {
         const response = await fetch(`/api/trains?graphId=${state.activeGraphId}`, {
             headers: { 'Authorization': `Bearer ${state.token}` }
         });
+
+        // Hantera utloggning (om token har gått ut)
+        if (response.status === 401) {
+            alert("Din session har gått ut. Vänligen logga in igen.");
+            localStorage.clear();
+            window.location.href = 'index.html';
+            return;
+        }
+
         if (response.ok) {
             const savedDbTrains = await response.json();
             state.trains = savedDbTrains.map(train => {
-                let timetable = train.timetable.map(stop => {
-                    let stIdx = state.stations.findIndex(s => s.sign === stop.stationSign);
-                    // Tvinga till minuter för grafen!
+                let timetable = (train.timetable || []).map(stop => {
+                    // Matchar stationen okänsligt mot stora/små bokstäver och dolda mellanslag
+                    let stIdx = state.stations.findIndex(s => cleanSign(s.sign) === cleanSign(stop.stationSign));
+                    
                     return stIdx !== -1 ? { 
                         station: stIdx, 
                         arrival: parseToMins(stop.arrival), 
@@ -63,7 +94,7 @@ export async function loadTrainsFromDatabase() {
                     } : null;
                 }).filter(n => n !== null);
                 
-                // MÅSTE sorteras i tid för att linjen ska ritas från vänster till höger
+                // Sortera kronologiskt så att strecken ritas rätt!
                 timetable.sort((a, b) => a.arrival - b.arrival);
                 
                 return { id: train.id, startDate: train.startDate, timetable };
@@ -87,11 +118,18 @@ export async function saveTrainsToDatabase() {
         }))
     };
     try {
-        await fetch('/api/trains', {
+        const response = await fetch('/api/trains', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
             body: JSON.stringify(exportData)
         });
+
+        if (response.status === 401) {
+            alert("Din session har gått ut. Vänligen logga in igen.");
+            localStorage.clear();
+            window.location.href = 'index.html';
+            return;
+        }
     } catch (error) { console.error("Kunde inte spara tåg:", error); }
 }
 
