@@ -26,6 +26,7 @@ export const state = {
     nowOffsetPercentage: 0.3,
     
     needsRedraw: true,
+    needsCalculations: true, // 🚨 NY FLAGGA FÖR PRESTANDA!
     needsSidebarUpdate: false,
     isTrackingNow: true,
     
@@ -36,5 +37,6 @@ export const state = {
 
 export function getAbsoluteMinutes() {
     const now = new Date();
+    // Räknar alltid exakt antal minuter sedan appen startades, helt skottsäkert!
     return ((now - referenceMidnight) / 60000) + state.simulationOffsetMinutes;
 }
