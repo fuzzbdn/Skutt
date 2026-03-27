@@ -1,42 +1,25 @@
 import { state } from './state.js';
 
-// --- HJÄLPFUNKTION: Gör om ALLA format till minuter för grafen ---
-function parseToMins(val, startDateStr) {
+// --- TOLK 1: När Grafen HÄMTAR tåg (Gör om ex '2026-03-27T12:00' till minuter från Dagens Midnatt) ---
+function parseToMins(val) {
     if (val === null || val === undefined || val === '') return 0;
-    if (typeof val === 'number') return Math.round(val);
     let strVal = String(val);
 
-    // 1. Om det är en datumsträng från Dagsplaneringen (ex: "2026-03-27T12:00")
+    // Om det är ett exakt datum från databasen (Den nya standarden)
     if (strVal.includes('T')) {
-        let datePart = strVal.split('T')[0];
-        let timePart = strVal.split('T')[1];
-        let parts = timePart.split(':');
-        let mins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-
-        // Om vi har ett startdatum för tåget, kolla om vi bytt dygn!
-        if (startDateStr) {
-            let d1 = new Date(startDateStr);
-            let d2 = new Date(datePart);
-            let diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-            mins += (diffDays * 1440); // Lägg till ett dygn (1440 min)
-        } else {
-            // Om inget startdatum finns, utgå från dagens datum
-            let today = new Date();
-            today.setHours(0, 0, 0, 0);
-            let d2 = new Date(datePart);
-            let diffDays = Math.round((d2 - today) / (1000 * 60 * 60 * 24));
-            mins += (diffDays * 1440);
-        }
-        return mins;
+        let targetDate = new Date(strVal);
+        let today = new Date();
+        today.setHours(0, 0, 0, 0); // Grafens "0-punkt" är alltid midnatt idag
+        
+        // Räkna ut exakt hur många minuter det skiljer sig från idag!
+        return Math.round((targetDate.getTime() - today.getTime()) / 60000);
     }
 
-    // 2. Gammalt klockslagsformat (ex: "12:00")
+    // Gamla klockslag eller minuter (Bakåtkompatibilitet för gamla tåg)
     if (strVal.includes(':')) {
         let parts = strVal.split(':');
         return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
     }
-
-    // 3. Om det redan är rena minuter från Grafen (ex: "1450")
     return parseInt(strVal, 10) || 0;
 }
 
@@ -64,9 +47,8 @@ export async function loadWorksFromDatabase() {
             const rawWorks = await response.json();
             state.trackWorks = rawWorks.map(w => ({
                 id: w.id, type: w.type, label: w.label, status: w.status,
-                // Banarbeten saknar startdatum i dagsläget, så vi skickar null
-                startTime: parseToMins(w.start_time, null), 
-                endTime: parseToMins(w.end_time, null),
+                startTime: parseToMins(w.start_time), 
+                endTime: parseToMins(w.end_time),
                 startStation: w.start_station, endStation: w.end_station,
                 track: w.track, blockedArea: w.blocked_area,
                 incStart: w.inc_start ?? true, incEnd: w.inc_end ?? true,
@@ -113,17 +95,16 @@ export async function loadTrainsFromDatabase() {
             const savedDbTrains = await response.json();
             state.trains = savedDbTrains.map(train => {
                 let timetable = (train.timetable || []).map(stop => {
-                    // Matchar stationen okänsligt mot stora/små bokstäver och dolda mellanslag
                     let stIdx = state.stations.findIndex(s => cleanSign(s.sign) === cleanSign(stop.stationSign));
-                    
                     return stIdx !== -1 ? { 
                         station: stIdx, 
-                        arrival: parseToMins(stop.arrival, train.startDate), 
-                        departure: parseToMins(stop.departure, train.startDate) 
+                        // Vi skickar bara in stoppets datum. Den struntar helt i train.startDate nu!
+                        arrival: parseToMins(stop.arrival), 
+                        departure: parseToMins(stop.departure) 
                     } : null;
                 }).filter(n => n !== null);
                 
-                // Sortera kronologiskt så att strecken ritas i ordning!
+                // Sortera kronologiskt
                 timetable.sort((a, b) => a.arrival - b.arrival);
                 
                 return { id: train.id, startDate: train.startDate, timetable };
@@ -133,19 +114,37 @@ export async function loadTrainsFromDatabase() {
     } catch (error) { console.error("API Fel (trains):", error); }
 }
 
+// --- TOLK 2: När Grafen SPARAR tåg (Gör om minuter till '2026-03-27T12:00' innan det skickas till databasen) ---
 export async function saveTrainsToDatabase() {
     if (!state.activeGraphId || state.trains.length === 0) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Samma midnatt som vi utgick från!
+
+    const minsToDateString = (mins) => {
+        let d = new Date(today.getTime() + (mins * 60000)); // Lägg till minuterna
+        let yyyy = d.getFullYear();
+        let mm = String(d.getMonth() + 1).padStart(2, '0');
+        let dd = String(d.getDate()).padStart(2, '0');
+        let hh = String(d.getHours()).padStart(2, '0');
+        let m = String(d.getMinutes()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}T${hh}:${m}`;
+    };
+
     const exportData = {
         graphId: state.activeGraphId,
         trains: state.trains.map(t => ({
-            id: t.id, startDate: t.startDate,
+            id: t.id, 
+            startDate: t.startDate,
             timetable: t.timetable.map(n => ({
                 stationSign: state.stations[n.station].sign,
-                arrival: Math.round(n.arrival), 
-                departure: Math.round(n.departure)
+                // Nu sparar Grafen datum istället för minuter!
+                arrival: minsToDateString(Math.round(n.arrival)), 
+                departure: minsToDateString(Math.round(n.departure))
             }))
         }))
     };
+
     try {
         const response = await fetch('/api/trains', {
             method: 'POST',
