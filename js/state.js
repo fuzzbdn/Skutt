@@ -15,7 +15,7 @@ export const state = {
     isTrackingNow: true,
     nowOffsetPercentage: 0.3,
     viewDuration: 120,
-    scrollSpeed: 0.4
+    scrollSpeed: 0.4,
 
     // Användare
     token: localStorage.getItem('skutt_token') || null,
