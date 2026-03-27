@@ -53,6 +53,7 @@ export async function loadWorksFromDatabase() {
                 detailsText: w.details_text, endPlace: w.end_place, bounds: w.bounds
             }));
             state.needsRedraw = true;
+            state.needsCalculations = true; // 🚨 SÄG ÅT GRAFEN ATT RÄKNA OM
         }
     } catch (error) { console.error("API Fel (works):", error); }
 }
@@ -84,8 +85,9 @@ export async function loadTrainsFromDatabase() {
                 timetable.sort((a, b) => a.arrival - b.arrival);
                 return { id: train.id, startDate: train.startDate, timetable };
             }).filter(t => t.timetable.length >= 2);
-            // 🚨 Det gamla filtret är nu borttaget så vi inte förlorar data!
+            // 🚨 Det farliga filtret är borta! Vi sparar nu ALLA tåg, men cullar dem i grafen!
             state.needsRedraw = true;
+            state.needsCalculations = true; // 🚨 SÄG ÅT GRAFEN ATT RÄKNA OM
         }
     } catch (error) { console.error("API Fel (trains):", error); }
 }
