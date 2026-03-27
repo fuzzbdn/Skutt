@@ -128,23 +128,17 @@ export function drawGraph() {
         ctx.setLineDash([]); ctx.fillStyle = theme.timeLabel; ctx.fillText(formatTime(time), margin.left - 10, y + 4);
     }
 
-// Banarbeten
+    // Banarbeten
     const viewEnd = state.currentStartTime + state.viewDuration;
     state.trackWorks.forEach(work => {
-        // NY RAD: Dölj avslutade arbeten i grafen!
         if (work.status === 'Avslutad') return;
-
-        // Säkerhetsspärr om datan är ofullständig
         if (work.startStation === undefined || work.endStation === undefined) return;
         if (isNaN(work.startTime) || isNaN(work.endTime)) return;
         if (work.endTime < state.currentStartTime || work.startTime > viewEnd) return;
-        
-        // ... (resten av koden är samma) ...
 
         let minSt = Math.min(work.startStation, work.endStation);
         let maxSt = Math.max(work.startStation, work.endStation);
         
-        // Här kollar vi om parenteserna är i-kryssade eller inte
         let incMin = work.startStation === minSt ? work.incStart : work.incEnd;
         let incMax = work.endStation === maxSt ? work.incEnd : work.incStart;
         
@@ -170,7 +164,6 @@ export function drawGraph() {
 
         ctx.beginPath(); ctx.strokeStyle = workColor; ctx.lineWidth = 2.5;
         
-        // Dra vågräta streck
         if (minSt === maxSt) {
             ctx.moveTo(x1 - 5, yTop); ctx.lineTo(x1 + 5, yTop); 
             ctx.moveTo(x1 - 5, yBottom); ctx.lineTo(x1 + 5, yBottom); 
@@ -179,13 +172,11 @@ export function drawGraph() {
             ctx.moveTo(x1, yBottom); ctx.lineTo(x2, yBottom); 
         }
 
-        // Dra lodräta streck
         for (let i = 0; i < state.stations.length; i++) {
             let sx = getX(i, canvas.width);
             if (sx >= x1 - 0.1 && sx <= x2 + 0.1) {
                 let drawVert = true;
                 if (minSt !== maxSt) {
-                    // Dölj lodräta streck vid kanterna om de är "exkluderade" (inom parentes)
                     if (i === minSt && !incMin) drawVert = false;
                     if (i === maxSt && !incMax) drawVert = false;
                 }
@@ -193,8 +184,6 @@ export function drawGraph() {
                     ctx.moveTo(sx, yTop); ctx.lineTo(sx, yBottom);
                 }
             }
-            
-            // Dra lodräta streck mitt emellan stationerna också
             if (i < state.stations.length - 1) {
                 let mx = (getX(i, canvas.width) + getX(i+1, canvas.width)) / 2;
                 if (mx >= x1 - 0.1 && mx <= x2 + 0.1) {
@@ -243,16 +232,45 @@ export function drawGraph() {
             }
         }
 
+        // --- HÄR ÄR DEN SMARTA UPPDRITNINGEN AV TÅGNUMMER ---
         ctx.fillStyle = theme.trainNumber; ctx.font = 'bold 11px system-ui, sans-serif';
-        if (train.timetable.length >= 2) {
-            const x1 = getNodeX(i, 0), x2 = getNodeX(i, 1);
-            const dy = getY(train.timetable[1].arrival, canvas.height) - getY(train.timetable[0].departure, canvas.height);
-            ctx.save(); ctx.translate((x1 + x2) / 2, (getY(train.timetable[0].departure, canvas.height) + getY(train.timetable[1].arrival, canvas.height)) / 2); 
-            let angle = Math.atan2(dy, x2 - x1); if ((x2 - x1) < 0) angle += Math.PI; ctx.rotate(angle);
+        const drawTrainId = (idx1, idx2) => {
+            const x1 = getNodeX(i, idx1), x2 = getNodeX(i, idx2);
+            const dx = x2 - x1;
+            const dy = getY(train.timetable[idx2].arrival, canvas.height) - getY(train.timetable[idx1].departure, canvas.height);
+            
+            let angle = Math.atan2(dy, dx); 
+            if (dx < 0) angle += Math.PI; 
+            
+            ctx.save(); 
+            ctx.translate((x1 + x2) / 2, (getY(train.timetable[idx1].departure, canvas.height) + getY(train.timetable[idx2].arrival, canvas.height)) / 2); 
+            ctx.rotate(angle);
+            
             ctx.fillStyle = isSelected ? 'rgba(51, 204, 255, 0.2)' : 'rgba(37, 38, 43, 0.6)';
-            const txtWidth = ctx.measureText(train.id).width; ctx.fillRect(-txtWidth/2 - 2, -12, txtWidth + 4, 14);
-            ctx.fillStyle = isSelected ? '#33ccff' : theme.trainNumber; ctx.fillText(train.id, 0, 0); ctx.restore();
+            const txtWidth = ctx.measureText(train.id).width; 
+            ctx.fillRect(-txtWidth/2 - 2, -12, txtWidth + 4, 14);
+            
+            ctx.fillStyle = isSelected ? '#33ccff' : theme.trainNumber; 
+            ctx.fillText(train.id, 0, 0); 
+            ctx.restore();
+        };
+
+        if (train.timetable.length > 5) {
+            // För långa tåg: Rita id i början, mitten och slutet
+            drawTrainId(0, 1);
+            let midIndex = Math.floor(train.timetable.length / 2); 
+            drawTrainId(midIndex - 1, midIndex);
+            drawTrainId(train.timetable.length - 2, train.timetable.length - 1);
+        } else {
+            // För korta tåg: Rita id på den längsta fysiska delen av strecket
+            let longestSeg = 0, bestI1 = 0, bestI2 = 1;
+            for (let j = 0; j < train.timetable.length - 1; j++) {
+                let dist = Math.pow(getNodeX(i, j+1) - getNodeX(i, j), 2) + Math.pow(getY(train.timetable[j+1].arrival, canvas.height) - getY(train.timetable[j].departure, canvas.height), 2);
+                if (dist > longestSeg) { longestSeg = dist; bestI1 = j; bestI2 = j+1; }
+            }
+            drawTrainId(bestI1, bestI2);
         }
+        // ---------------------------------------------------
 
         if (isSelected) {
             train.timetable.forEach((node, j) => {
