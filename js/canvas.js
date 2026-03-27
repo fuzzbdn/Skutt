@@ -20,8 +20,14 @@ export function getNodeX(tIndex, nIndex) {
 }
 
 export function updateTrainLanes() {
+    const viewEnd = state.currentStartTime + state.viewDuration; // 🚀 Snabb-culling
     for (let i = 0; i < state.trains.length; i++) {
-        if (!state.trains[i].timetable) continue;
+        if (!state.trains[i].timetable || state.trains[i].timetable.length < 2) continue;
+        
+        let tMin = state.trains[i].timetable[0].arrival;
+        let tMax = state.trains[i].timetable[state.trains[i].timetable.length-1].departure;
+        if (tMax < state.currentStartTime || tMin > viewEnd) continue; // 🚀 Hoppa över osynliga
+
         for (let j = 0; j < state.trains[i].timetable.length; j++) {
             const node = state.trains[i].timetable[j];
             let occupiedLanes = new Set();
@@ -44,12 +50,16 @@ export function updateTrainLanes() {
 export function updateConflicts() {
     state.conflicts = [];
     state.conflictSegments.clear();
+    const viewEnd = state.currentStartTime + state.viewDuration; // 🚀 Snabb-culling
+
     for (let i = 0; i < state.trains.length; i++) {
         if (!state.trains[i].timetable || state.trains[i].timetable.length < 2) continue;
         
         let t1Min = state.trains[i].timetable[0].arrival;
         let t1Max = state.trains[i].timetable[state.trains[i].timetable.length-1].departure;
         if (t1Min > t1Max) { let tmp = t1Min; t1Min = t1Max; t1Max = tmp; }
+        
+        if (t1Max < state.currentStartTime || t1Min > viewEnd) continue; // 🚀 Hoppa över osynliga
 
         for (let j = 0; j < state.trains[i].timetable.length - 1; j++) {
             let x1_base = getX(state.trains[i].timetable[j].station, canvas.width);
