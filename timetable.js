@@ -121,15 +121,34 @@ function selectTrain(idx) {
 function renderTimetable(timetable, startDate) {
     timetableBody.innerHTML = '';
     
-    // Säkerställer att äldre tåg i formatet "12:00" packas om till datetime-local ("2026-03-27T12:00")
+    // En super-smart tolk som klarar av alla gamla och nya format i databasen!
     const formatForInput = (val, baseDate) => {
-        if (!val) return '';
-        if (val.includes('T')) return val.substring(0, 16);
-        if (val.length <= 5 && val.includes(':')) {
-            const safeDate = baseDate || new Date().toISOString().split('T')[0];
-            return `${safeDate}T${val}`;
+        if (val === null || val === undefined || val === '') return '';
+        
+        // Standarddatum om tåget saknar startdatum
+        const safeDate = baseDate || new Date().toISOString().split('T')[0];
+        let strVal = String(val);
+        
+        // Format 1: Redan korrekt datumformat (ex: "2026-03-27T12:00")
+        if (strVal.includes('T')) return strVal.substring(0, 16);
+        
+        // Format 2: Bara klockslag (ex: "12:00")
+        if (strVal.includes(':')) {
+            // Se till att klockslaget alltid är 5 tecken (hh:mm) ifall en nolla saknas
+            let timePart = strVal.length === 4 ? `0${strVal}` : strVal;
+            return `${safeDate}T${timePart.substring(0,5)}`;
         }
-        return val;
+        
+        // Format 3: Gamla minuter från midnatt (ex: "720")
+        if (!isNaN(strVal)) {
+            let num = parseInt(strVal, 10);
+            let m = Math.floor(((num % 60) + 60) % 60);
+            let h = Math.floor(num / 60);
+            let hhmm = `${(((h % 24) + 24) % 24).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+            return `${safeDate}T${hhmm}`;
+        }
+        
+        return '';
     };
 
     timetable.forEach((stop) => {
