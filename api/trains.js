@@ -26,11 +26,18 @@ export default async function handler(req, res) {
 
       dbTrains.forEach(train => {
         const tNum = train.train_number;
-        if (!trainMap[tNum]) trainMap[tNum] = { id: tNum, startDate: train.start_date, timetable: [] };
+        const sDate = train.start_date || 'IngetDatum';
+        
+        // 🚨 LÖSNINGEN: Vi separerar på både ID och Datum!
+        const uniqueKey = `${tNum}_${sDate}`; 
+
+        if (!trainMap[uniqueKey]) {
+            trainMap[uniqueKey] = { id: tNum, startDate: train.start_date, timetable: [] };
+        }
         
         const stops = dbStops.filter(s => s.train_id === train.id);
         stops.forEach(stop => {
-            trainMap[tNum].timetable.push({
+            trainMap[uniqueKey].timetable.push({
                 stationSign: stop.station_sign,
                 arrival: stop.arrival,
                 departure: stop.departure
@@ -70,7 +77,6 @@ export default async function handler(req, res) {
          `;
 
          for (let stop of train.timetable) {
-             // 🚨 NU SPARAR VI HELA DATUMSTRÄNGEN DIREKT!
              await sql`
                INSERT INTO train_stops (train_id, station_sign, arrival, departure)
                VALUES (${uniqueDbId}, ${stop.stationSign}, ${stop.arrival}, ${stop.departure})
