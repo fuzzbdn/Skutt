@@ -482,5 +482,62 @@ async function parseTrafikverketXML(xmlString) {
         alert("Kunde inte läsa XML-filen."); console.error(err);
     }
 }
+// --- EXPORTERA TILL XML FRÅN DAGSPLANERINGEN ---
+const exportXmlBtn = document.getElementById('exportXmlBtn');
+if (exportXmlBtn) {
+    exportXmlBtn.addEventListener('click', () => {
+        if (!currentTrains || currentTrains.length === 0) {
+            return alert("Det finns inga tåg att exportera för denna sträcka.");
+        }
 
+        // Bygg XML-huvudet
+        let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<Timetable graphId="${activeGraphId}">\n`;
+        
+        // Hjälpfunktion för att plocka ut "hh:mm" från databasens "YYYY-MM-DDThh:mm"
+        const getHHMM = (dateStr) => {
+            if (!dateStr) return "";
+            if (dateStr.includes('T')) {
+                const parts = dateStr.split('T')[1].split(':');
+                return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+            }
+            if (dateStr.includes(':')) {
+                const parts = dateStr.split(':');
+                return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+            }
+            return dateStr;
+        };
+
+        // Loopa igenom alla tåg i dagsplaneringens lista
+        currentTrains.forEach(t => {
+            // Skapa Train-taggen med startdatum
+            const safeDate = t.startDate ? String(t.startDate).split('T')[0] : new Date().toISOString().split('T')[0];
+            xml += `\t<Train id="${t.id}" startDate="${safeDate}">\n`;
+            
+            // Loopa igenom varje hållplats
+            t.timetable.forEach((stop) => {
+                let sign = stop.stationSign;
+                let arr = getHHMM(stop.arrival);
+                let dep = getHHMM(stop.departure);
+                
+                // Skriv ut alla hållplatser
+                xml += `\t\t<Stop sign="${sign}" arrival="${arr}" departure="${dep}"/>\n`;
+            });
+            
+            xml += `\t</Train>\n`;
+        });
+        
+        xml += `</Timetable>`;
+
+        // Skapa och ladda ner filen
+        const blob = new Blob([xml], { type: 'text/xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dagsplanering_export_${Date.now()}.xml`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+}
 init();
