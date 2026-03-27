@@ -37,13 +37,31 @@ async function loadGraph(graphId) {
     const graph = savedGraphs.find(g => g.id === graphId);
     stations = graph.stations ? graph.stations.sort((a,b) => a.km - b.km) : [];
     
-    // NYTT: Hämta tågen från Databasen istället för LocalStorage!
+    // HJÄLPFUNKTION: Rensa stationsnamn för säker matchning
+    const cleanSign = (sign) => sign ? sign.toString().trim().toLowerCase() : "";
+    
     try {
         const res = await fetch(`/api/trains?graphId=${activeGraphId}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        
+        // --- HANTERA UTLOPT SESSION ---
+        if (res.status === 401) {
+            localStorage.clear();
+            window.location.href = 'index.html';
+            return;
+        }
+
         if (res.ok) {
-            currentTrains = await res.json();
+            const allGlobalTrains = await res.json();
+            
+            // 🚨 NYTT FILTER: Behåll bara de tåg som har minst 2 stopp i DENNA graf
+            currentTrains = allGlobalTrains.filter(train => {
+                const matchingStops = train.timetable.filter(stop => 
+                    stations.some(s => cleanSign(s.sign) === cleanSign(stop.stationSign))
+                );
+                return matchingStops.length >= 2;
+            });
         } else {
             currentTrains = [];
         }
@@ -56,7 +74,6 @@ async function loadGraph(graphId) {
     trainEditor.style.display = 'none';
     emptyState.style.display = 'flex';
 }
-
 function renderTrainList() {
     trainList.innerHTML = '';
     const groupedTrains = {};
