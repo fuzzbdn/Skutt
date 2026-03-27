@@ -121,31 +121,40 @@ function selectTrain(idx) {
 function renderTimetable(timetable, startDate) {
     timetableBody.innerHTML = '';
     
-    // En super-smart tolk som klarar av alla gamla och nya format i databasen!
+    // Den perfekta tolken: Gör om allt till 'YYYY-MM-DDThh:mm'
     const formatForInput = (val, baseDate) => {
         if (val === null || val === undefined || val === '') return '';
-        
-        // Standarddatum om tåget saknar startdatum
-        const safeDate = baseDate || new Date().toISOString().split('T')[0];
         let strVal = String(val);
-        
-        // Format 1: Redan korrekt datumformat (ex: "2026-03-27T12:00")
+        const safeDate = baseDate || new Date().toISOString().split('T')[0];
+
+        // 1. Redan perfekt format ("2026-03-27T12:00")
         if (strVal.includes('T')) return strVal.substring(0, 16);
         
-        // Format 2: Bara klockslag (ex: "12:00")
+        // 2. Format med bara tid ("12:00")
         if (strVal.includes(':')) {
-            // Se till att klockslaget alltid är 5 tecken (hh:mm) ifall en nolla saknas
-            let timePart = strVal.length === 4 ? `0${strVal}` : strVal;
-            return `${safeDate}T${timePart.substring(0,5)}`;
+            let parts = strVal.split(':');
+            return `${safeDate}T${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
         }
         
-        // Format 3: Gamla minuter från midnatt (ex: "720")
+        // 3. Minuter från Grafen (ex: 1450 = kl 00:10 nästa dygn)
         if (!isNaN(strVal)) {
             let num = parseInt(strVal, 10);
-            let m = Math.floor(((num % 60) + 60) % 60);
-            let h = Math.floor(num / 60);
-            let hhmm = `${(((h % 24) + 24) % 24).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-            return `${safeDate}T${hhmm}`;
+            
+            let days = Math.floor(num / 1440); // 1440 minuter = 1 dygn
+            let remainingMins = num % 1440;
+            if (remainingMins < 0) remainingMins += 1440; 
+            
+            let h = Math.floor(remainingMins / 60);
+            let m = remainingMins % 60;
+            
+            let d = new Date(safeDate);
+            d.setDate(d.getDate() + days); // Plussa på eventuella midnattspassager
+            
+            let yyyy = d.getFullYear();
+            let mm = String(d.getMonth() + 1).padStart(2, '0');
+            let dd = String(d.getDate()).padStart(2, '0');
+            
+            return `${yyyy}-${mm}-${dd}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
         }
         
         return '';
@@ -159,7 +168,6 @@ function renderTimetable(timetable, startDate) {
         ));
     });
 }
-
 function createRow(stationSign = '', arr = '', dep = '') {
     const tr = document.createElement('tr');
     tr.style.borderBottom = "1px solid #2a2b30";
