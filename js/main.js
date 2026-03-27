@@ -22,7 +22,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 export async function initApp() {
     createLogoutButton();
-    
+    // HÄMTA ANVÄNDARINSTÄLLNINGAR GLOBALT
+    try {
+        const settingsRes = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${state.token}` } });
+        if (settingsRes.ok) {
+            const settingsData = await settingsRes.json();
+            if (settingsData.scroll_sensitivity) state.scrollSpeed = parseFloat(settingsData.scroll_sensitivity);
+            if (settingsData.view_duration) state.viewDuration = parseInt(settingsData.view_duration);
+        }
+    } catch (e) { console.error("Kunde inte ladda personliga inställningar", e); }
     try {
         const res = await fetch('/api/graphs', { 
             headers: { 'Authorization': `Bearer ${state.token}` } 
