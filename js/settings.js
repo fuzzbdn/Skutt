@@ -1,36 +1,28 @@
 const token = localStorage.getItem('skutt_token');
 if (!token) window.location.href = 'index.html';
 
-const scrollSpeedInput = document.getElementById('scrollSpeedInput');
-const scrollSpeedValue = document.getElementById('scrollSpeedValue');
+const scrollMinutesInput = document.getElementById('scrollMinutesInput');
+const nodeStepInput = document.getElementById('nodeStepInput');
 const viewDurationInput = document.getElementById('viewDurationInput');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
-// Uppdatera texten när man drar i reglaget
-scrollSpeedInput.addEventListener('input', (e) => {
-    let val = parseFloat(e.target.value);
-    scrollSpeedValue.textContent = `${val}x ${val < 0.5 ? '(Mjukare)' : (val > 1 ? '(Snabbare)' : '(Standard)')}`;
-});
-
-// Hämta inställningar vid start
 async function loadSettings() {
     try {
         const res = await fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } });
         if (res.ok) {
             const data = await res.json();
-            scrollSpeedInput.value = data.scroll_sensitivity || 0.4;
+            scrollMinutesInput.value = data.scroll_minutes || 10;
+            nodeStepInput.value = data.node_step_minutes || 2;
             viewDurationInput.value = data.view_duration || 120;
-            // Trigga input-eventet för att uppdatera texten
-            scrollSpeedInput.dispatchEvent(new Event('input')); 
         }
     } catch (e) { console.error("Kunde inte hämta inställningar"); }
 }
 
-// Spara inställningar
 saveSettingsBtn.addEventListener('click', async () => {
     const payload = {
-        scroll_sensitivity: parseFloat(scrollSpeedInput.value),
-        view_duration: parseInt(viewDurationInput.value)
+        scroll_minutes: parseInt(scrollMinutesInput.value) || 10,
+        node_step_minutes: parseInt(nodeStepInput.value) || 2,
+        view_duration: parseInt(viewDurationInput.value) || 120
     };
 
     try {
