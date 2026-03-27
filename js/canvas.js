@@ -20,13 +20,15 @@ export function getNodeX(tIndex, nIndex) {
 }
 
 export function updateTrainLanes() {
-    const viewEnd = state.currentStartTime + state.viewDuration; // 🚀 Snabb-culling
+    const viewEnd = state.currentStartTime + state.viewDuration;
     for (let i = 0; i < state.trains.length; i++) {
         if (!state.trains[i].timetable || state.trains[i].timetable.length < 2) continue;
         
         let tMin = state.trains[i].timetable[0].arrival;
         let tMax = state.trains[i].timetable[state.trains[i].timetable.length-1].departure;
-        if (tMax < state.currentStartTime || tMin > viewEnd) continue; // 🚀 Hoppa över osynliga
+        
+        // 🚀 SNABB-CULLING: Hoppa över tåg som inte syns på skärmen!
+        if (tMax < state.currentStartTime || tMin > viewEnd) continue;
 
         for (let j = 0; j < state.trains[i].timetable.length; j++) {
             const node = state.trains[i].timetable[j];
@@ -50,7 +52,7 @@ export function updateTrainLanes() {
 export function updateConflicts() {
     state.conflicts = [];
     state.conflictSegments.clear();
-    const viewEnd = state.currentStartTime + state.viewDuration; // 🚀 Snabb-culling
+    const viewEnd = state.currentStartTime + state.viewDuration;
 
     for (let i = 0; i < state.trains.length; i++) {
         if (!state.trains[i].timetable || state.trains[i].timetable.length < 2) continue;
@@ -59,7 +61,8 @@ export function updateConflicts() {
         let t1Max = state.trains[i].timetable[state.trains[i].timetable.length-1].departure;
         if (t1Min > t1Max) { let tmp = t1Min; t1Min = t1Max; t1Max = tmp; }
         
-        if (t1Max < state.currentStartTime || t1Min > viewEnd) continue; // 🚀 Hoppa över osynliga
+        // 🚀 SNABB-CULLING: Räkna inte krockar för historiska/framtida tåg!
+        if (t1Max < state.currentStartTime || t1Min > viewEnd) continue;
 
         for (let j = 0; j < state.trains[i].timetable.length - 1; j++) {
             let x1_base = getX(state.trains[i].timetable[j].station, canvas.width);
@@ -114,8 +117,12 @@ export function drawConflicts() {
 export function drawGraph() {
     if (!ctx || state.stations.length === 0) return;
     
-    updateTrainLanes(); 
-    updateConflicts(); 
+    // 🚨 PRESTANDAFIXEN: Vi rör bara matematiken när något faktiskt förändrats!
+    if (state.needsCalculations) {
+        updateTrainLanes(); 
+        updateConflicts(); 
+        state.needsCalculations = false;
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -127,7 +134,6 @@ export function drawGraph() {
     ctx.save(); 
     ctx.beginPath(); ctx.rect(0, margin.top, canvas.width, canvas.height - margin.top - margin.bottom); ctx.clip();
     
-    // Tidslinjer
     const startGridTime = Math.floor(state.currentStartTime / 10) * 10 - 10;
     const endGridTime = state.currentStartTime + state.viewDuration + 10;
     ctx.lineWidth = 1; ctx.font = '10px system-ui, sans-serif'; ctx.textAlign = 'right';
@@ -138,7 +144,6 @@ export function drawGraph() {
         ctx.setLineDash([]); ctx.fillStyle = theme.timeLabel; ctx.fillText(formatTime(time), margin.left - 10, y + 4);
     }
 
-    // Banarbeten
     const viewEnd = state.currentStartTime + state.viewDuration;
     state.trackWorks.forEach(work => {
         if (work.status === 'Avslutad') return;
@@ -211,7 +216,6 @@ export function drawGraph() {
         }
     });
 
-    // Tåg
     state.trains.forEach((train, i) => {
         if (!train.timetable || train.timetable.length < 2) return;
         let validTimes = train.timetable.flatMap(n => [n.arrival, n.departure]).filter(t => t !== null && !isNaN(t));
@@ -242,7 +246,6 @@ export function drawGraph() {
             }
         }
 
-        // --- HÄR ÄR DEN SMARTA UPPDRITNINGEN AV TÅGNUMMER ---
         ctx.fillStyle = theme.trainNumber; ctx.font = 'bold 11px system-ui, sans-serif';
         const drawTrainId = (idx1, idx2) => {
             const x1 = getNodeX(i, idx1), x2 = getNodeX(i, idx2);
@@ -266,13 +269,11 @@ export function drawGraph() {
         };
 
         if (train.timetable.length > 5) {
-            // För långa tåg: Rita id i början, mitten och slutet
             drawTrainId(0, 1);
             let midIndex = Math.floor(train.timetable.length / 2); 
             drawTrainId(midIndex - 1, midIndex);
             drawTrainId(train.timetable.length - 2, train.timetable.length - 1);
         } else {
-            // För korta tåg: Rita id på den längsta fysiska delen av strecket
             let longestSeg = 0, bestI1 = 0, bestI2 = 1;
             for (let j = 0; j < train.timetable.length - 1; j++) {
                 let dist = Math.pow(getNodeX(i, j+1) - getNodeX(i, j), 2) + Math.pow(getY(train.timetable[j+1].arrival, canvas.height) - getY(train.timetable[j].departure, canvas.height), 2);
@@ -280,7 +281,6 @@ export function drawGraph() {
             }
             drawTrainId(bestI1, bestI2);
         }
-        // ---------------------------------------------------
 
         if (isSelected) {
             train.timetable.forEach((node, j) => {
