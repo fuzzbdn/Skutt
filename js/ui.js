@@ -676,7 +676,8 @@ export function setupUI() {
 
         e.preventDefault(); 
         state.isTrackingNow = false; 
-        scrollContainer.scrollTop += e.deltaY; 
+        // Applicerar skrollhastigheten (t.ex. 0.4 gör det mer än dubbelt så mjukt)
+        scrollContainer.scrollTop += (e.deltaY * state.scrollSpeed);
         
         const maxScroll = scrollContent.clientHeight - scrollContainer.clientHeight;
         const maxTime = state.currentRealMinutes + 48 * 60;
