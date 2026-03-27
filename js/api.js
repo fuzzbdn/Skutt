@@ -1,44 +1,41 @@
 import { state } from './state.js';
 
-// --- TOLK 1: Gör om tider till minuter (Klarar både "12:00" och "2026-03-27T12:00") ---
+// --- SÄKER TIDSOMVANDLING (UTC-matematik för att undvika alla tidszonsbuggar) ---
 function parseToMins(val, startDateStr) {
-    if (val === null || val === undefined || val === '') return 0;
+    if (!val) return 0;
     let strVal = String(val);
 
-    let targetDateStr;
-    let timeStr;
+    let yyyy, mm, dd, hh, min;
 
-    // 1. Om tidsstämpeln har ett datum inbyggt (t.ex. från importen)
+    // Plocka isär datum och tid exakt som de är skrivna
     if (strVal.includes('T')) {
         let parts = strVal.split('T');
-        targetDateStr = parts[0];
-        timeStr = parts[1];
-    } 
-    // 2. Om det bara är "12:00", tvinga in tågets startdatum!
-    else if (strVal.includes(':')) {
-        targetDateStr = startDateStr || new Date().toISOString().split('T')[0];
-        timeStr = strVal;
-    } 
-    // 3. Om det är gamla sparade minuter (fallback)
-    else {
+        let dParts = parts[0].split('-');
+        let tParts = parts[1].split(':');
+        yyyy = parseInt(dParts[0], 10); mm = parseInt(dParts[1], 10); dd = parseInt(dParts[2], 10);
+        hh = parseInt(tParts[0], 10); min = parseInt(tParts[1], 10);
+    } else if (strVal.includes(':')) {
+        let fDate = startDateStr ? String(startDateStr).split('T')[0] : new Date().toISOString().split('T')[0];
+        let dParts = fDate.split('-');
+        let tParts = strVal.split(':');
+        yyyy = parseInt(dParts[0], 10); mm = parseInt(dParts[1], 10); dd = parseInt(dParts[2], 10);
+        hh = parseInt(tParts[0], 10); min = parseInt(tParts[1], 10);
+    } else {
         return parseInt(strVal, 10) || 0;
     }
 
-    let timeParts = timeStr.split(':');
-    let minsFromMidnight = parseInt(timeParts[0], 10) * 60 + parseInt(timeParts[1], 10);
-
-    // Jämför alltid med midnatt för DAGENS datum
-    let targetDate = new Date(targetDateStr + "T00:00:00");
-    let today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Diff i dagar räknar ut hur många dygn bakåt/framåt vi ska (sommartidssäkert)
-    let diffDays = Math.round((targetDate.getTime() - today.getTime()) / 86400000);
+    // Tvinga webbläsaren att räkna i ren UTC-tid så vi slipper sommartids-krockar
+    let now = new Date();
+    let todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    let targetUTC = Date.UTC(yyyy, mm - 1, dd);
+    
+    // Antal 24-timmars perioder (dagar) skillnad
+    let diffDays = Math.round((targetUTC - todayUTC) / 86400000);
+    let minsFromMidnight = (hh * 60) + min;
 
     return (diffDays * 1440) + minsFromMidnight;
 }
 
-// --- HJÄLPFUNKTION: Rensa stationsnamn (tar bort mellanslag och gemener) ---
 function cleanSign(sign) {
     if (!sign) return "";
     return sign.toString().trim().toLowerCase();
@@ -47,22 +44,12 @@ function cleanSign(sign) {
 export async function loadWorksFromDatabase() {
     if (!state.activeGraphId) return;
     try {
-        const response = await fetch(`/api/works?graphId=${state.activeGraphId}`, {
-            headers: { 'Authorization': `Bearer ${state.token}` }
-        });
-
-        if (response.status === 401) {
-            alert("Din session har gått ut. Vänligen logga in igen.");
-            localStorage.clear();
-            window.location.href = 'index.html';
-            return;
-        }
-
+        const response = await fetch(`/api/works?graphId=${state.activeGraphId}`, { headers: { 'Authorization': `Bearer ${state.token}` } });
+        if (response.status === 401) { alert("Session utgången."); localStorage.clear(); window.location.href = 'index.html'; return; }
         if (response.ok) {
             const rawWorks = await response.json();
             state.trackWorks = rawWorks.map(w => ({
                 id: w.id, type: w.type, label: w.label, status: w.status,
-                // Arbeten har sällan startDateStr ännu, vi skickar null
                 startTime: parseToMins(w.start_time, null), 
                 endTime: parseToMins(w.end_time, null),
                 startStation: w.start_station, endStation: w.end_station,
@@ -79,34 +66,16 @@ export async function loadWorksFromDatabase() {
 
 export async function deleteWorkFromDatabase(id) {
     try {
-        const response = await fetch(`/api/works?id=${id}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${state.token}` }
-        });
-
-        if (response.status === 401) {
-            alert("Din session har gått ut. Vänligen logga in igen.");
-            localStorage.clear();
-            window.location.href = 'index.html';
-            return;
-        }
+        const response = await fetch(`/api/works?id=${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${state.token}` } });
+        if (response.status === 401) { localStorage.clear(); window.location.href = 'index.html'; }
     } catch (error) { console.error("Kunde inte radera:", error); }
 }
 
 export async function loadTrainsFromDatabase() {
     if (!state.activeGraphId) return;
     try {
-        const response = await fetch(`/api/trains?graphId=${state.activeGraphId}`, {
-            headers: { 'Authorization': `Bearer ${state.token}` }
-        });
-
-        if (response.status === 401) {
-            alert("Din session har gått ut. Vänligen logga in igen.");
-            localStorage.clear();
-            window.location.href = 'index.html';
-            return;
-        }
-
+        const response = await fetch(`/api/trains?graphId=${state.activeGraphId}`, { headers: { 'Authorization': `Bearer ${state.token}` } });
+        if (response.status === 401) { localStorage.clear(); window.location.href = 'index.html'; return; }
         if (response.ok) {
             const savedDbTrains = await response.json();
             state.trains = savedDbTrains.map(train => {
@@ -114,24 +83,20 @@ export async function loadTrainsFromDatabase() {
                     let stIdx = state.stations.findIndex(s => cleanSign(s.sign) === cleanSign(stop.stationSign));
                     return stIdx !== -1 ? { 
                         station: stIdx, 
-                        // NU skickar vi med startdatumet så att historiska tåg tvingas bakåt i tiden!
                         arrival: parseToMins(stop.arrival, train.startDate), 
                         departure: parseToMins(stop.departure, train.startDate) 
                     } : null;
                 }).filter(n => n !== null);
                 
                 timetable.sort((a, b) => a.arrival - b.arrival);
-                
                 return { id: train.id, startDate: train.startDate, timetable };
             }).filter(t => {
                 if (t.timetable.length < 2) return false;
                 
-                // 🚨 SMART FILTER: Dölj historiska tåg!
+                // 🚨 SMART FILTER: Döljer allt som passerade för mer än 24h sedan, 
+                // eller som börjar om mer än 48h.
                 const firstStop = t.timetable[0].arrival;
                 const lastStop = t.timetable[t.timetable.length - 1].departure;
-                
-                // Döljer alla tåg som är mer än 24h i det förflutna (<-1440) 
-                // eller mer än 48h i framtiden (>2880)
                 return lastStop >= -1440 && firstStop <= 2880;
             });
             state.needsRedraw = true;
@@ -139,22 +104,21 @@ export async function loadTrainsFromDatabase() {
     } catch (error) { console.error("API Fel (trains):", error); }
 }
 
-// --- TOLK 2: När Grafen SPARAR tåg ---
 export async function saveTrainsToDatabase() {
     if (!state.activeGraphId || state.trains.length === 0) return;
 
+    // Gör om från minuter till ren databassträng, helt oberoende av webbläsarens tidszon
     const minsToDateString = (mins) => {
         let days = Math.floor(mins / 1440);
         let remainingMins = mins % 1440;
         if (remainingMins < 0) remainingMins += 1440; 
         
-        let d = new Date();
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + days); // Lägg till antal dagar från idags-midnatt
+        let now = new Date();
+        let targetUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + days));
         
-        let yyyy = d.getFullYear();
-        let mm = String(d.getMonth() + 1).padStart(2, '0');
-        let dd = String(d.getDate()).padStart(2, '0');
+        let yyyy = targetUTC.getUTCFullYear();
+        let mm = String(targetUTC.getUTCMonth() + 1).padStart(2, '0');
+        let dd = String(targetUTC.getUTCDate()).padStart(2, '0');
         let hh = String(Math.floor(remainingMins / 60)).padStart(2, '0');
         let m = String(remainingMins % 60).padStart(2, '0');
         
@@ -180,13 +144,7 @@ export async function saveTrainsToDatabase() {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
             body: JSON.stringify(exportData)
         });
-
-        if (response.status === 401) {
-            alert("Din session har gått ut. Vänligen logga in igen.");
-            localStorage.clear();
-            window.location.href = 'index.html';
-            return;
-        }
+        if (response.status === 401) { localStorage.clear(); window.location.href = 'index.html'; }
     } catch (error) { console.error("Kunde inte spara tåg:", error); }
 }
 
