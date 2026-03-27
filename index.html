@@ -3,24 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SKUTT - Logga in</title>
+    <title>Skutt - Inloggning</title>
     <link rel="stylesheet" href="style.css">
-</head>
-<body style="background:#1a1b1e; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0;">
-    <h1 style="color:#33ccff; margin-bottom: 5px; font-size: 48px;">S K U T T</h1>
-    <p style="color: #888888; margin-bottom: 30px;">Smart Kontrollsystem för Uppdatering av Trassliga Tidtabeller</p>
     
-    <div style="background:#25262b; padding:30px; border-radius:8px; width:300px; text-align:center; border: 1px solid #3f4147; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-        <h3 style="margin-top:0; color:#e4e5e7;">Logga in</h3>
-        <input type="text" id="authUsername" placeholder="Användarnamn" style="width:100%; padding:10px; margin-bottom:10px; background:#1a1b1e; border:1px solid #3f4147; color:#fff; border-radius:4px; box-sizing:border-box; outline:none;">
-        <input type="password" id="authPassword" placeholder="Lösenord" style="width:100%; padding:10px; margin-bottom:15px; background:#1a1b1e; border:1px solid #3f4147; color:#fff; border-radius:4px; box-sizing:border-box; outline:none;">
+    <style>
+        /* Specifik styling för just inloggningssidan (Dark Mode) */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1b1e;
+            color: #ececec;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        .login-container {
+            background-color: #25262b;
+            padding: 45px 40px;
+            border-radius: 8px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 440px;
+            text-align: center;
+            border: 1px solid #373a40;
+        }
+        .login-input {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 15px;
+            background-color: #1a1b1e;
+            border: 1px solid #373a40;
+            color: #ececec;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .login-input:focus {
+            border-color: #33ccff;
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background-color: #33ccff;
+            color: #1a1b1e;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            margin-top: 10px;
+        }
+        .login-btn:hover {
+            background-color: #2eb8e6;
+        }
+        .login-btn:active {
+            transform: scale(0.98);
+        }
+        .logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
         
-        <button id="loginBtn" class="sidebar-btn full-width" style="border-color:#33ccff; color:#33ccff; margin-bottom:10px; font-size:14px; padding:10px;">Logga in</button>
-        <button id="registerBtn" class="sidebar-btn full-width" style="border-color:#eed57e; color:#eed57e; font-size:14px; padding:10px;">Skapa nytt konto</button>
+        <div class="logo-container">
+            <svg width="120" height="120" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="margin-bottom: 5px;">
+                <line x1="15" y1="85" x2="85" y2="85" stroke="#eed57e" stroke-width="6" stroke-linecap="round" />
+                <line x1="25" y1="96" x2="75" y2="96" stroke="#eed57e" stroke-width="6" stroke-linecap="round" />
+                
+                <path d="M 15 75 Q 50 10 80 65" fill="none" stroke="#33ccff" stroke-width="5" stroke-linecap="round" stroke-dasharray="8, 6" />
+                
+                <path d="M 75 70 C 65 70, 70 55, 80 50 C 85 45, 88 55, 85 70 Z" fill="#33ccff" />
+                <path d="M 80 55 L 75 35 L 83 48 L 88 32 L 87 50 Z" fill="#33ccff" stroke="#33ccff" stroke-width="2" stroke-linejoin="round" />
+            </svg>
+            
+            <span style="font-size: 2.8em; font-weight: 800; letter-spacing: 4px; color: #ffffff; text-transform: uppercase; text-shadow: 0px 4px 15px rgba(51, 204, 255, 0.3);">
+                SKUTT
+            </span>
+            
+            <span style="font-size: 0.85em; color: #888888; letter-spacing: 0.5px; margin-top: 10px; line-height: 1.4; font-weight: 500;">
+                Smart Kontrollsystem för Uppdatering<br>av Trassliga Tidtabeller
+            </span>
+        </div>
+
+        <form id="loginForm">
+            <input type="text" id="username" class="login-input" placeholder="Användarnamn" required autocomplete="username">
+            <input type="password" id="password" class="login-input" placeholder="Lösenord" required autocomplete="current-password">
+            <button type="submit" class="login-btn">Logga in</button>
+        </form>
         
-        <div id="authMessage" style="color:#ff6b6b; margin-top:15px; font-size:13px; height:15px; font-weight:500;"></div>
+        <div id="loginError" style="color: #ff6b6b; margin-top: 15px; font-size: 0.9em; display: none;"></div>
+        
     </div>
 
     <script type="module" src="js/login.js"></script>
+
 </body>
 </html>
