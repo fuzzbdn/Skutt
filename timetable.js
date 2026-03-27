@@ -45,7 +45,6 @@ async function loadGraph(graphId) {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        // --- HANTERA UTLOPT SESSION ---
         if (res.status === 401) {
             localStorage.clear();
             window.location.href = 'index.html';
@@ -55,7 +54,7 @@ async function loadGraph(graphId) {
         if (res.ok) {
             const allGlobalTrains = await res.json();
             
-            // 🚨 NYTT FILTER: Behåll bara de tåg som har minst 2 stopp i DENNA graf
+            // Behåll bara de tåg som har minst 2 stopp i DENNA graf
             currentTrains = allGlobalTrains.filter(train => {
                 const matchingStops = train.timetable.filter(stop => 
                     stations.some(s => cleanSign(s.sign) === cleanSign(stop.stationSign))
@@ -74,6 +73,7 @@ async function loadGraph(graphId) {
     trainEditor.style.display = 'none';
     emptyState.style.display = 'flex';
 }
+
 function renderTrainList() {
     trainList.innerHTML = '';
     const groupedTrains = {};
@@ -114,27 +114,29 @@ function selectTrain(idx) {
     trainIdInput.value = train.id;
     trainStartDateInput.value = train.startDate || "";
     
-    renderTimetable(train.timetable);
+    renderTimetable(train.timetable, train.startDate);
     renderTrainList();
 }
 
-function renderTimetable(timetable) {
+function renderTimetable(timetable, startDate) {
     timetableBody.innerHTML = '';
     
-    // Hjälpfunktion: gör om minuter (ex 720) till text (ex "12:00") för HTML-rutorna
-    const formatToText = (val) => {
-        if (typeof val === 'string' && val.includes(':')) return val; 
-        if (isNaN(val)) return '';
-        let m = Math.floor(((val % 60) + 60) % 60);
-        let h = Math.floor(val / 60);
-        return `${(((h % 24) + 24) % 24).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    // Säkerställer att äldre tåg i formatet "12:00" packas om till datetime-local ("2026-03-27T12:00")
+    const formatForInput = (val, baseDate) => {
+        if (!val) return '';
+        if (val.includes('T')) return val.substring(0, 16);
+        if (val.length <= 5 && val.includes(':')) {
+            const safeDate = baseDate || new Date().toISOString().split('T')[0];
+            return `${safeDate}T${val}`;
+        }
+        return val;
     };
 
     timetable.forEach((stop) => {
         timetableBody.appendChild(createRow(
             stop.stationSign, 
-            formatToText(stop.arrival), 
-            formatToText(stop.departure)
+            formatForInput(stop.arrival, startDate), 
+            formatForInput(stop.departure, startDate)
         ));
     });
 }
@@ -161,8 +163,8 @@ function createRow(stationSign = '', arr = '', dep = '') {
     
     tr.innerHTML = `
         <td style="padding: 2px;">${sel}</td>
-        <td style="padding: 2px;"><input type="time" class="arr-in" value="${arr}" style="${inputStyle}" onfocus="${focusLogic}" onblur="${blurLogic}"></td>
-        <td style="padding: 2px;"><input type="time" class="dep-in" value="${dep}" style="${inputStyle}" onfocus="${focusLogic}" onblur="${blurLogic}"></td>
+        <td style="padding: 2px;"><input type="datetime-local" class="arr-in" value="${arr}" style="${inputStyle}" onfocus="${focusLogic}" onblur="${blurLogic}"></td>
+        <td style="padding: 2px;"><input type="datetime-local" class="dep-in" value="${dep}" style="${inputStyle}" onfocus="${focusLogic}" onblur="${blurLogic}"></td>
         <td style="padding: 2px; text-align: center;"><button class="del-btn" title="Ta bort rad" style="background:transparent; border:none; color:#ff6b6b; font-size:1.5em; cursor:pointer; padding:0; height:30px;">×</button></td>
     `;
     
@@ -173,13 +175,14 @@ function createRow(stationSign = '', arr = '', dep = '') {
 document.getElementById('createNewTrainBtn').addEventListener('click', async () => {
     const today = new Date();
     const dateStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,'0') + "-" + String(today.getDate()).padStart(2,'0');
+    const timeStr = `${dateStr}T12:00`;
     
     const newTrain = {
         id: "Nytt",
         startDate: dateStr,
         timetable: [
-            { stationSign: stations[0]?.sign || '', arrival: '12:00', departure: '12:00' },
-            { stationSign: stations[stations.length-1]?.sign || '', arrival: '13:00', departure: '13:00' }
+            { stationSign: stations[0]?.sign || '', arrival: timeStr, departure: timeStr },
+            { stationSign: stations[stations.length-1]?.sign || '', arrival: `${dateStr}T13:00`, departure: `${dateStr}T13:00` }
         ]
     };
     currentTrains.push(newTrain);
@@ -232,14 +235,20 @@ document.getElementById('deleteTrainBtn').addEventListener('click', async () => 
     }
 });
 
-// NYTT: Spara till Databasen via API:et!
 async function saveData() {
     try {
-        await fetch('/api/trains', {
+        const response = await fetch('/api/trains', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ graphId: activeGraphId, trains: currentTrains })
         });
+        
+        if (response.status === 401) {
+            alert("Din session har gått ut. Vänligen logga in igen.");
+            localStorage.clear();
+            window.location.href = 'index.html';
+            return;
+        }
     } catch (error) {
         console.error("Kunde inte spara tåg till databasen", error);
     }
@@ -249,18 +258,20 @@ async function saveData() {
 const importExternalXmlBtn = document.getElementById('importExternalXmlBtn');
 const externalXmlFileInput = document.getElementById('externalXmlFileInput');
 
-importExternalXmlBtn.addEventListener('click', () => externalXmlFileInput.click());
+if (importExternalXmlBtn && externalXmlFileInput) {
+    importExternalXmlBtn.addEventListener('click', () => externalXmlFileInput.click());
 
-externalXmlFileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        parseTrafikverketXML(event.target.result);
-        externalXmlFileInput.value = ''; 
-    };
-    reader.readAsText(file);
-});
+    externalXmlFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            parseTrafikverketXML(event.target.result);
+            externalXmlFileInput.value = ''; 
+        };
+        reader.readAsText(file);
+    });
+}
 
 async function parseTrafikverketXML(xmlString) {
     try {
@@ -282,14 +293,22 @@ async function parseTrafikverketXML(xmlString) {
                 if (!parsedData[trainId]) parsedData[trainId] = [];
                 
                 const dateObj = new Date(timeNode.textContent);
-                const hhmm = dateObj.getHours().toString().padStart(2, '0') + ':' + 
-                             dateObj.getMinutes().toString().padStart(2, '0');
-                             
-                const dateStr = dateObj.getFullYear() + '-' + 
-                                String(dateObj.getMonth()+1).padStart(2,'0') + '-' + 
-                                String(dateObj.getDate()).padStart(2,'0');
+                
+                // Bygg strängen exakt som <input type="datetime-local"> vill ha det (YYYY-MM-DDThh:mm)
+                const yyyy = dateObj.getFullYear();
+                const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const dd = String(dateObj.getDate()).padStart(2, '0');
+                const hh = String(dateObj.getHours()).padStart(2, '0');
+                const mins = String(dateObj.getMinutes()).padStart(2, '0');
+                const datetimeLocal = `${yyyy}-${mm}-${dd}T${hh}:${mins}`;
 
-                parsedData[trainId].push({ loc: locNode.textContent, type: activityNode.textContent, time: hhmm, timestamp: dateObj.getTime(), dateStr: dateStr });
+                parsedData[trainId].push({ 
+                    loc: locNode.textContent, 
+                    type: activityNode.textContent, 
+                    time: datetimeLocal,
+                    timestamp: dateObj.getTime(), 
+                    dateStr: `${yyyy}-${mm}-${dd}` 
+                });
             }
         }
 
@@ -300,11 +319,11 @@ async function parseTrafikverketXML(xmlString) {
         }
 
         let graphStations = stations;
-        let validSigns = graphStations.map(s => s.sign);
+        let validSigns = graphStations.map(s => s.sign.toLowerCase());
         let graphImportedTrains = [];
 
         for (const trainId in parsedData) {
-            let trainAnns = parsedData[trainId].filter(ann => validSigns.includes(ann.loc));
+            let trainAnns = parsedData[trainId].filter(ann => validSigns.includes(ann.loc.toLowerCase()));
             if (trainAnns.length < 2) continue; 
 
             trainAnns.sort((a, b) => a.timestamp - b.timestamp);
