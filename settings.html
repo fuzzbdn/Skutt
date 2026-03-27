@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKUTT - Inställningar</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <div class="topbar">
+        <h2>⚙️ Personliga Inställningar</h2>
+        <button onclick="window.location.href='graph.html'" class="topbar-btn">Tillbaka till Graf</button>
+    </div>
+
+    <div class="admin-container" style="max-width: 600px; margin: 40px auto; padding: 20px; background: #25262b; border-radius: 8px;">
+        
+        <div style="margin-bottom: 25px;">
+            <label style="color: #ececec; font-weight: bold; display: block; margin-bottom: 5px;">Skrollhastighet i grafen</label>
+            <p style="font-size: 0.8em; color: #888; margin-bottom: 10px;">Styr hur snabbt grafen rör sig när du använder mushjulet.</p>
+            <input type="range" id="scrollSpeedInput" min="0.1" max="1.5" step="0.1" value="0.4" style="width: 100%;">
+            <div style="text-align: center; color: #33ccff; font-weight: bold; margin-top: 5px;" id="scrollSpeedValue">0.4x (Mjukare)</div>
+        </div>
+
+        <div style="margin-bottom: 30px;">
+            <label style="color: #ececec; font-weight: bold; display: block; margin-bottom: 5px;">Grafens Tidsfönster (Zoom)</label>
+            <p style="font-size: 0.8em; color: #888; margin-bottom: 10px;">Hur många minuter som ska visas på skärmen samtidigt (Standard 120 minuter).</p>
+            <input type="number" id="viewDurationInput" value="120" style="width: 100%; padding: 10px; background: #1a1b1e; border: 1px solid #373a40; color: white; border-radius: 4px;">
+        </div>
+
+        <button id="saveSettingsBtn" class="sidebar-btn full-width" style="border-color: #33ccff; color: #33ccff; padding: 12px; font-size: 1.1em;">💾 Spara inställningar</button>
+    </div>
+
+    <script type="module" src="js/settings.js"></script>
+</body>
+</html>
