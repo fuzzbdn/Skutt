@@ -1,4 +1,4 @@
-import { state, getAbsoluteMinutes, history } from './state.js';
+import { state, getAbsoluteMinutes, history, referenceMidnight, referenceMidnightUTC } from './state.js';
 import { getY, getTimeFromY, getX, margin, getStationFromX, formatTime } from './math.js';
 import { canvas, drawGraph, getNodeX } from './canvas.js';
 import { saveTrainsToDatabase, debouncedSave, loadWorksFromDatabase, deleteWorkFromDatabase } from './api.js';
@@ -539,20 +539,45 @@ export function setupUI() {
     const setSimTimeBtn = document.getElementById('setSimTimeBtn');
     const resetSimTimeBtn = document.getElementById('resetSimTimeBtn');
     const simulatedTimeInput = document.getElementById('simulatedTimeInput');
+    const simulatedDateInput = document.getElementById('simulatedDateInput');
 
     const getSafeLocalMinutes = () => {
         const now = new Date();
-        return (now.getHours() * 60) + now.getMinutes() + (now.getSeconds() / 60);
+        const currentUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        const diffDays = Math.round((currentUTC - referenceMidnightUTC) / 86400000);
+        return (diffDays * 1440) + (now.getHours() * 60) + now.getMinutes() + (now.getSeconds() / 60);
     };
 
     if (setSimTimeBtn && simulatedTimeInput) {
         setSimTimeBtn.addEventListener('click', () => {
             const timeVal = simulatedTimeInput.value;
-            if (!timeVal) return;
+            const dateVal = simulatedDateInput?.value;
+            
+            if (!timeVal) return; // Tid är obligatoriskt
+            
             const parts = timeVal.split(':');
-            const simMins = (parseInt(parts[0], 10) * 60) + (parts[1] ? parseInt(parts[1], 10) : 0);
+            const hh = parseInt(parts[0], 10);
+            const mm = parts[1] ? parseInt(parts[1], 10) : 0;
+            
+            let targetUTC;
+            
+            // Om datum är valt i fältet
+            if (dateVal) {
+                const dateParts = dateVal.split('-');
+                targetUTC = Date.UTC(parseInt(dateParts[0], 10), parseInt(dateParts[1], 10) - 1, parseInt(dateParts[2], 10));
+            } else {
+                // Annars utgå från dagens datum
+                const now = new Date();
+                targetUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+            }
+            
+            // Räkna ut hur många minuter det här rör sig om från systemets startpunkt (referenceMidnightUTC)
+            const diffDays = Math.round((targetUTC - referenceMidnightUTC) / 86400000);
+            const simMins = (diffDays * 1440) + (hh * 60) + mm;
+
             const realMins = getSafeLocalMinutes();
             state.simulationOffsetMinutes = simMins - realMins;
+            
             if (resetSimTimeBtn) resetSimTimeBtn.style.display = 'inline-block';
             state.isTrackingNow = true;
             state.currentRealMinutes = getSafeLocalMinutes() + state.simulationOffsetMinutes;
@@ -567,6 +592,7 @@ export function setupUI() {
         resetSimTimeBtn.addEventListener('click', () => {
             state.simulationOffsetMinutes = 0;
             if (simulatedTimeInput) simulatedTimeInput.value = '';
+            if (simulatedDateInput) simulatedDateInput.value = '';
             resetSimTimeBtn.style.display = 'none';
             state.isTrackingNow = true;
             state.currentRealMinutes = getSafeLocalMinutes();
