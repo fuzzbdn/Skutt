@@ -20,7 +20,7 @@ async function init() {
     // Hämta grafer från databasen istället för bara localStorage
     try {
         const res = await fetch('/api/graphs', { 
-            headers: { 'Authorization': `Bearer ${token}` } 
+            headers: { 'Authorization': `Bearer ${token}` }  
         });
         if (res.ok) {
             graphs = await res.json();
